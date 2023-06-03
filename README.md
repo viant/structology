@@ -33,7 +33,7 @@ type (
         Id     int
         Name   string
         Active bool
-        Has    *EntityHas `presenceMarker:"true"`
+        Has    *EntityHas `setMarker:"true"`
     }
 )
 

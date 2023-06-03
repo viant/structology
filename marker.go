@@ -9,18 +9,19 @@ import (
 
 //Marker field set marker
 type Marker struct {
-	holder        *xunsafe.Field
-	fields        []*xunsafe.Field
-	filedPos      map[string]int
-	IdentityIndex int
+	t      reflect.Type
+	holder *xunsafe.Field
+	fields []*xunsafe.Field
+	index  map[string]int //marker field post
+
 }
 
-//FieldIndex returns mapped field index or -1
+//Index returns mapped field index or -1
 func (p *Marker) Index(name string) int {
-	if len(p.filedPos) == 0 {
+	if len(p.index) == 0 {
 		return -1
 	}
-	pos, ok := p.filedPos[name]
+	pos, ok := p.index[name]
 	if !ok {
 		return -1
 	}
@@ -30,7 +31,7 @@ func (p *Marker) Index(name string) int {
 //SetAll sets all marker field with supplied flag
 func (p *Marker) SetAll(ptr unsafe.Pointer, flag bool) error {
 	if !p.CanUseHolder(ptr) {
-		return fmt.Errorf("holder was empty")
+		return fmt.Errorf("failed to set all due to holder was empty")
 	}
 	markerPtr := p.holder.ValuePointer(ptr)
 	for _, field := range p.fields {
@@ -86,17 +87,21 @@ func (p *Marker) has(ptr unsafe.Pointer, index int) bool {
 //Init initialises field set marker
 func (p *Marker) init() error {
 	if p.holder == nil {
-		return fmt.Errorf("holder was empty")
+		typeName := ""
+		if p.t != nil {
+			typeName = p.t.String()
+		}
+		return fmt.Errorf("holder was empty for %s", typeName)
 	}
-	if len(p.filedPos) == 0 {
+	if len(p.index) == 0 {
 		return fmt.Errorf("struct has no markable fields")
 	}
 	if holder := p.holder; holder != nil {
-		p.fields = make([]*xunsafe.Field, len(p.filedPos))
+		p.fields = make([]*xunsafe.Field, len(p.index))
 		holderType := ensureStruct(holder.Type)
 		for i := 0; i < holderType.NumField(); i++ {
 			markerField := holderType.Field(i)
-			pos, ok := p.filedPos[markerField.Name]
+			pos, ok := p.index[markerField.Name]
 			if !ok {
 				return fmt.Errorf("marker filed: '%v' does not have corresponding struct field", markerField.Name)
 			}
@@ -107,16 +112,20 @@ func (p *Marker) init() error {
 }
 
 //NewMarker returns new struct field set marker
-func NewMarker(t reflect.Type) (*Marker, error) {
+func NewMarker(t reflect.Type, opts ...Option) (*Marker, error) {
 	if t = ensureStruct(t); t == nil {
 		return nil, fmt.Errorf("supplied type is not struct")
 	}
 	numFiled := t.NumField()
-	var result = &Marker{fields: make([]*xunsafe.Field, numFiled), filedPos: make(map[string]int, numFiled)}
+	var result = &Marker{t: t, fields: make([]*xunsafe.Field, numFiled), index: make(map[string]int, numFiled)}
+	Options(opts).Apply(result)
+	hasIndex := len(result.index) > 0
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-		result.filedPos[field.Name] = field.Index[0]
-		if IsHasMarker(field.Tag) {
+		if !hasIndex {
+			result.index[field.Name] = field.Index[0]
+		}
+		if IsSetMarker(field.Tag) {
 			result.holder = xunsafe.NewField(field)
 		}
 	}

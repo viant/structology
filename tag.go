@@ -7,14 +7,14 @@ import (
 
 const (
 	//SetMarkerTag defines set marker tag
-	SetMarkerTag = "presenceMarker"
+	SetMarkerTag = "setMarker"
 
 	legacyMarkerTag = "presenceIndex"
 
 	legacyTagFragment = "presence=true"
 )
 
-func IsHasMarker(tag reflect.StructTag) bool {
+func IsSetMarker(tag reflect.StructTag) bool {
 	if _, ok := tag.Lookup(SetMarkerTag); ok {
 		return true
 	}

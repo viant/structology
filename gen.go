@@ -11,7 +11,7 @@ func GenMarkerFields(t reflect.Type) []reflect.StructField {
 	boolType := reflect.TypeOf(true)
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-		if IsHasMarker(field.Tag) {
+		if IsSetMarker(field.Tag) {
 			continue
 		}
 		result = append(result, reflect.StructField{Name: field.Name, PkgPath: t.PkgPath(), Type: boolType})
