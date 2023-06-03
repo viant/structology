@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/viant/xunsafe"
 	"reflect"
-	"strings"
 	"unsafe"
 )
 
@@ -117,7 +116,7 @@ func NewMarker(t reflect.Type) (*Marker, error) {
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		result.filedPos[field.Name] = field.Index[0]
-		if _, ok := field.Tag.Lookup(SetMarkerTag); ok || strings.Contains(string(field.Tag), legacyTagFragment) {
+		if IsHasMarker(field.Tag) {
 			result.holder = xunsafe.NewField(field)
 		}
 	}

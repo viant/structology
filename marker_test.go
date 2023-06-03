@@ -28,7 +28,7 @@ func TestMarker_IsSet(t *testing.T) {
 					Id     int
 					Name   string
 					Active bool
-					Has    *EntityHas `presence:"true"`
+					Has    *EntityHas `presenceMarker:"true"`
 				}
 				return &Entity{Has: &EntityHas{Id: true, Active: true}, Id: 1, Active: true}
 			},
@@ -48,7 +48,7 @@ func TestMarker_IsSet(t *testing.T) {
 					Name   string
 					Active bool
 					Nums   []int
-					Has    *EntityHas `presence:"true"`
+					Has    *EntityHas `presenceMarker:"true"`
 				}
 				return &Entity{Has: &EntityHas{Name: true}, Name: "abc"}
 			},
@@ -68,7 +68,7 @@ func TestMarker_IsSet(t *testing.T) {
 					Id     int
 					Name   string
 					Active bool
-					Has    *EntityHas `presence:"true"`
+					Has    *EntityHas `presenceMarker:"true"`
 				}
 				return &Entity{Has: &EntityHas{Name: true}, Name: "abc"}
 			},
