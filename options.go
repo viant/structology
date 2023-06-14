@@ -20,5 +20,13 @@ func (o Options) Apply(m *Marker) {
 func WithIndex(index map[string]int) Option {
 	return func(m *Marker) {
 		m.index = index
+		m.noStrict = true
+	}
+}
+
+//WithNoStrict create no strict option
+func WithNoStrict(flag bool) Option {
+	return func(m *Marker) {
+		m.noStrict = flag
 	}
 }

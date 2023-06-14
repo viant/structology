@@ -9,11 +9,11 @@ import (
 
 //Marker field set marker
 type Marker struct {
-	t      reflect.Type
-	holder *xunsafe.Field
-	fields []*xunsafe.Field
-	index  map[string]int //marker field post
-
+	t        reflect.Type
+	holder   *xunsafe.Field
+	fields   []*xunsafe.Field
+	index    map[string]int //marker field post
+	noStrict bool
 }
 
 //Index returns mapped field index or -1
@@ -103,6 +103,9 @@ func (p *Marker) init() error {
 			markerField := holderType.Field(i)
 			pos, ok := p.index[markerField.Name]
 			if !ok {
+				if p.noStrict {
+					continue
+				}
 				return fmt.Errorf("marker filed: '%v' does not have corresponding struct field", markerField.Name)
 			}
 			p.fields[pos] = xunsafe.NewField(markerField)
