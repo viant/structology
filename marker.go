@@ -134,3 +134,18 @@ func NewMarker(t reflect.Type, opts ...Option) (*Marker, error) {
 	}
 	return result, result.init()
 }
+
+//HasSetMarker returns true if struct has set marker
+func HasSetMarker(t reflect.Type) bool {
+	t = ensureStruct(t)
+	if t == nil {
+		return false
+	}
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if IsSetMarker(field.Tag) {
+			return true
+		}
+	}
+	return false
+}
