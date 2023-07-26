@@ -7,7 +7,7 @@ import (
 	"unsafe"
 )
 
-//Marker field set marker
+// Marker field set marker
 type Marker struct {
 	t        reflect.Type
 	holder   *xunsafe.Field
@@ -16,7 +16,7 @@ type Marker struct {
 	noStrict bool
 }
 
-//Index returns mapped field index or -1
+// Index returns mapped field index or -1
 func (p *Marker) Index(name string) int {
 	if len(p.index) == 0 {
 		return -1
@@ -28,7 +28,7 @@ func (p *Marker) Index(name string) int {
 	return pos
 }
 
-//SetAll sets all marker field with supplied flag
+// SetAll sets all marker field with supplied flag
 func (p *Marker) SetAll(ptr unsafe.Pointer, flag bool) error {
 	if !p.CanUseHolder(ptr) {
 		return fmt.Errorf("failed to set all due to holder was empty")
@@ -50,12 +50,11 @@ func (p *Marker) CanUseHolder(ptr unsafe.Pointer) bool {
 	return true
 }
 
-//Set sets field marker
+// Set sets field marker
 func (p *Marker) Set(ptr unsafe.Pointer, index int, flag bool) error {
 	if !p.CanUseHolder(ptr) {
 		return fmt.Errorf("holder was empty")
 	}
-
 	markerPtr := p.holder.ValuePointer(ptr)
 	if index >= len(p.fields) || p.fields[index] == nil {
 		return fmt.Errorf("field at index %v was missing in set marker", index)
@@ -64,7 +63,7 @@ func (p *Marker) Set(ptr unsafe.Pointer, index int, flag bool) error {
 	return nil
 }
 
-//IsSet returns true if field has been set
+// IsSet returns true if field has been set
 func (p *Marker) IsSet(ptr unsafe.Pointer, index int) bool {
 	if p.holder == nil || p.holder.IsNil(ptr) {
 		return true //we do not have field presence provider so we assume all fields are set
@@ -75,7 +74,21 @@ func (p *Marker) IsSet(ptr unsafe.Pointer, index int) bool {
 	return p.has(ptr, index)
 }
 
-//Has checks if filed value was flagged as set
+func (p *Marker) EnsureHolder(ptr unsafe.Pointer) {
+	if !p.holder.IsNil(ptr) {
+		return
+	}
+	isPtr := p.holder.Type.Kind() == reflect.Ptr
+	var value interface{}
+	if isPtr {
+		value = reflect.New(p.holder.Type.Elem()).Interface()
+	} else {
+		value = reflect.New(p.holder.Type).Elem().Interface()
+	}
+	p.holder.SetValue(ptr, value)
+}
+
+// Has checks if filed value was flagged as set
 func (p *Marker) has(ptr unsafe.Pointer, index int) bool {
 	markerPtr := p.holder.ValuePointer(ptr)
 	if index >= len(p.fields) || p.fields[index] == nil {
@@ -84,7 +97,7 @@ func (p *Marker) has(ptr unsafe.Pointer, index int) bool {
 	return p.fields[index].Bool(markerPtr)
 }
 
-//Init initialises field set marker
+// Init initialises field set marker
 func (p *Marker) init() error {
 	if p.holder == nil {
 		typeName := ""
@@ -114,7 +127,7 @@ func (p *Marker) init() error {
 	return nil
 }
 
-//NewMarker returns new struct field set marker
+// NewMarker returns new struct field set marker
 func NewMarker(t reflect.Type, opts ...Option) (*Marker, error) {
 	if t = ensureStruct(t); t == nil {
 		return nil, fmt.Errorf("supplied type is not struct")
@@ -135,7 +148,7 @@ func NewMarker(t reflect.Type, opts ...Option) (*Marker, error) {
 	return result, result.init()
 }
 
-//HasSetMarker returns true if struct has set marker
+// HasSetMarker returns true if struct has set marker
 func HasSetMarker(t reflect.Type) bool {
 	t = ensureStruct(t)
 	if t == nil {

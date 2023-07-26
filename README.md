@@ -20,8 +20,13 @@ with presence marker allowing you handling user input effectively, ensuring data
 
 Initially we have a few project holding marker abstraction to finally move it to this project.  
 
+This project also implement a state that wraps arbitrary go struct, and provide selectors
+to dynamically access/mutate any nested/addressable values, if set marker is defined all set operation also
+would flag respective marker field 
+
 ## Usage
 
+##### Set Marker
 ```go
 type (
     HasEntity struct {
@@ -52,3 +57,63 @@ type (
 }
 ```
 
+##### State with SetMarker
+
+```go
+package bar
+
+import (
+	"fmt"
+	"reflect"
+	"github.com/viant/structology"
+	"encoding/json"
+)
+
+type FooHas struct {
+	Id   bool
+	Name bool
+}
+
+type DummyHas struct {
+	Id  bool
+	Foo bool
+}
+
+type Foo struct {
+	Id   int
+	Name string
+	Has  *FooHas `setMarker:"true"`
+}
+
+type Dummy struct {
+	Id  int
+	Foo *Foo
+	Has *DummyHas `setMarker:"true"`
+}
+
+func ShowStateUsage() {
+	
+	dummy := &Dummy{Foo: &Foo{}}
+	valueType := reflect.TypeOf(dummy)
+	stateType := structology.NewStateType(valueType)
+	state := stateType.WithValue(dummy)
+	
+	hasFoo, _ := state.Bool("Has.Foo")
+	fmt.Printf("initial foo has marker: %v\n", 	hasFoo)
+	hasFooName, _ := 	state.Bool("Foo.Has.Name") 
+	fmt.Printf("initial foo has marker: %v\n", 	hasFooName)
+	
+	state.SetString("Foo.Name", "Bob Dummy")
+	data, _ := json.Marshal(dummy)
+	fmt.Printf("dummy: %s\n", data)
+
+	hasFoo, _ = state.Bool("Has.Foo")
+	fmt.Printf("foo has marker: %v\n", 	hasFoo)
+	hasFooName, _ = 	state.Bool("Foo.Has.Name")
+	fmt.Printf("foo has marker: %v\n", 	hasFooName)
+	
+}
+
+```
+
+Check unit test for more advanced usage.
