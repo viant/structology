@@ -27,6 +27,11 @@ func (s *State) Pointer() unsafe.Pointer {
 	return s.ptr
 }
 
+//Value return state value
+func (s *State) Value() interface{} {
+	return s.value
+}
+
 // SetValue set state value
 func (s *State) SetValue(aPath string, value interface{}, pathOptions ...PathOption) error {
 	selector, err := s.Selector(aPath)
