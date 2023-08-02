@@ -27,8 +27,8 @@ func (s *State) Pointer() unsafe.Pointer {
 	return s.ptr
 }
 
-//Value return state value
-func (s *State) Value() interface{} {
+// State return state value
+func (s *State) State() interface{} {
 	return s.value
 }
 
@@ -39,6 +39,16 @@ func (s *State) SetValue(aPath string, value interface{}, pathOptions ...PathOpt
 		return err
 	}
 	selector.SetValue(s.ptr, value, pathOptions...)
+	return nil
+}
+
+// Set sets primitive value
+func (s *State) Set(aPath string, value interface{}, pathOptions ...PathOption) error {
+	selector, err := s.Selector(aPath)
+	if err != nil {
+		return err
+	}
+	selector.Set(s.ptr, value, pathOptions...)
 	return nil
 }
 
