@@ -22,6 +22,10 @@ type (
 	}
 )
 
+func (s *State) Type() *StateType {
+	return s.stateType
+}
+
 // Pointer returns state actual value pointer
 func (s *State) Pointer() unsafe.Pointer {
 	return s.ptr
