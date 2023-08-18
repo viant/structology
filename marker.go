@@ -16,6 +16,13 @@ type Marker struct {
 	noStrict bool
 }
 
+func (p *Marker) Type() reflect.Type {
+	if p.holder == nil {
+		return nil
+	}
+	return p.holder.Type
+}
+
 func (p *Marker) IsFieldSet(ptr unsafe.Pointer, name string) bool {
 	idx := p.Index(name)
 	if idx == -1 { //no info we assume it's set

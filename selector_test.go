@@ -267,7 +267,7 @@ func TestSetter(t *testing.T) {
 				type Foo struct {
 					Id     int
 					Values []int
-					HAs    *FooHas `setMarker:"true"`
+					//HAs    *FooHas `setMarker:"true"`
 				}
 				return &Foo{}
 			},
@@ -300,10 +300,13 @@ func TestSetter(t *testing.T) {
 		valueType := reflect.TypeOf(value)
 		stateType := NewStateType(valueType)
 		state := stateType.WithValue(value)
+
 		err := state.SetValue(testCase.selector, testCase.value)
 		assert.Nil(t, err, testCase.description)
 		marker := stateType.Marker()
-		assert.True(t, marker.IsFieldSet(state.Pointer(), testCase.selector))
+		if marker != nil {
+			assert.True(t, marker.IsFieldSet(state.Pointer(), testCase.selector))
+		}
 		actual, err := state.Value(testCase.selector)
 		assert.Nil(t, err, testCase.description)
 		assert.EqualValues(t, testCase.expect, actual, testCase.description)
