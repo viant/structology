@@ -43,24 +43,26 @@ func (s *State) Type() *StateType {
 }
 
 func (s *State) HasMarker() bool {
-	marker := s.stateType.marker
-	if marker == nil || marker.holder == nil {
-		return false
-	}
-	return true
+	return s.stateType.HasMarker()
 }
 
 func (s *State) MarkerHolder() interface{} {
-	marker := s.stateType.marker
-	if marker == nil || marker.holder == nil {
+	if !s.HasMarker() {
 		return nil
 	}
-	return marker.holder.Value(s.ptr)
+	return s.stateType.marker.holder.Value(s.ptr)
 }
 
 // Marker returns marker
 func (s *StateType) Marker() *Marker {
 	return s.marker
+}
+
+func (s *StateType) HasMarker() bool {
+	if s.marker == nil || s.marker.holder == nil {
+		return false
+	}
+	return true
 }
 
 // Pointer returns state actual value pointer
