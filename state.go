@@ -42,6 +42,14 @@ func (s *State) Type() *StateType {
 	return s.stateType
 }
 
+func (s *State) HasMarker() bool {
+	marker := s.stateType.marker
+	if marker == nil || marker.holder == nil {
+		return false
+	}
+	return true
+}
+
 func (s *State) MarkerHolder() interface{} {
 	marker := s.stateType.marker
 	if marker == nil || marker.holder == nil {
