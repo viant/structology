@@ -37,6 +37,10 @@ func (o *selectorOptions) apply(opts []SelectorOption) {
 	}
 }
 
+func (s Selectors) Lookup(name string) *Selector {
+	return s[name]
+}
+
 // Type returns selector result type
 func (s *Selector) Type() reflect.Type {
 	leaf := s.paths[len(s.paths)-1]

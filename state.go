@@ -22,6 +22,11 @@ type (
 	}
 )
 
+// Lookup returns a selector
+func (s *StateType) Lookup(name string) *Selector {
+	return s.selectors.Lookup(name)
+}
+
 func (s *State) Type() *StateType {
 	return s.stateType
 }
