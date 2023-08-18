@@ -42,12 +42,12 @@ func (s *State) Type() *StateType {
 	return s.stateType
 }
 
-func (s *State) MarkerHolder(pointer unsafe.Pointer) interface{} {
+func (s *State) MarkerHolder() interface{} {
 	marker := s.stateType.marker
 	if marker == nil || marker.holder == nil {
 		return nil
 	}
-	return marker.holder.Value(pointer)
+	return marker.holder.Value(s.ptr)
 }
 
 // Marker returns marker
