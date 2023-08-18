@@ -260,9 +260,14 @@ func TestSetter(t *testing.T) {
 			description: "repeated int",
 			selector:    "Values",
 			new: func() interface{} {
+				type FooHas struct {
+					Id     bool
+					Values bool
+				}
 				type Foo struct {
 					Id     int
 					Values []int
+					HAs    *FooHas `setMarker:"true"`
 				}
 				return &Foo{}
 			},
@@ -273,11 +278,16 @@ func TestSetter(t *testing.T) {
 			description: "repeated int",
 			selector:    "Values",
 			new: func() interface{} {
+				type BarHas struct {
+					Id     bool
+					Values bool
+				}
 				type Bar struct {
 					Id     int
 					Values []float64
+					Has    *BarHas `setMarker:"true"`
 				}
-				return &Bar{}
+				return &Bar{Has: &BarHas{}}
 			},
 			value:  "1,2,3.1",
 			expect: []float64{1.0, 2.0, 3.1},
@@ -292,9 +302,11 @@ func TestSetter(t *testing.T) {
 		state := stateType.WithValue(value)
 		err := state.SetValue(testCase.selector, testCase.value)
 		assert.Nil(t, err, testCase.description)
-
+		marker := stateType.Marker()
+		assert.True(t, marker.IsFieldSet(state.Pointer(), testCase.selector))
 		actual, err := state.Value(testCase.selector)
 		assert.Nil(t, err, testCase.description)
 		assert.EqualValues(t, testCase.expect, actual, testCase.description)
+
 	}
 }

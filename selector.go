@@ -252,14 +252,13 @@ func (s *Selector) upstreamWithMarker(ptr unsafe.Pointer, opts []PathOption) (*p
 }
 
 // NewSelectors creates a selectors for supplied owner types
-func NewSelectors(owner reflect.Type, opts ...SelectorOption) Selectors {
+func NewSelectors(owner reflect.Type, opts ...SelectorOption) (Selectors, *Marker) {
 	options := &selectorOptions{}
 	options.apply(opts)
-	result := newSelectors(owner, nil, options)
-	return result
+	return newSelectors(owner, nil, options)
 }
 
-func newSelectors(owner reflect.Type, ancestors paths, options *selectorOptions) Selectors {
+func newSelectors(owner reflect.Type, ancestors paths, options *selectorOptions) (Selectors, *Marker) {
 	aStruct := ensureStruct(owner)
 	xStruct := xunsafe.NewStruct(aStruct)
 	var marker *Marker
@@ -278,7 +277,7 @@ func newSelectors(owner reflect.Type, ancestors paths, options *selectorOptions)
 			}
 		}
 		if structType := ensureStruct(field.Type); structType != nil && !isTimeType(structType) && owner != structType {
-			selector.Selectors = newSelectors(field.Type, selector.paths, options)
+			selector.Selectors, _ = newSelectors(field.Type, selector.paths, options)
 		}
 		for _, key := range options.getNames(field.Name, field.Tag) {
 			result[key] = selector
@@ -288,7 +287,7 @@ func newSelectors(owner reflect.Type, ancestors paths, options *selectorOptions)
 		}
 		selector.useSlice = selector.paths.useSlice()
 	}
-	return result
+	return result, marker
 }
 
 // WithCustomizedNames returns selector option with customized names use by selector indexer

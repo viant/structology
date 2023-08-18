@@ -12,6 +12,7 @@ type (
 	StateType struct {
 		rType     reflect.Type
 		selectors Selectors
+		marker    *Marker
 	}
 
 	//State represents a state
@@ -29,6 +30,11 @@ func (s *StateType) Lookup(name string) *Selector {
 
 func (s *State) Type() *StateType {
 	return s.stateType
+}
+
+// Marker returns marker
+func (s *StateType) Marker() *Marker {
+	return s.marker
 }
 
 // Pointer returns state actual value pointer
@@ -168,7 +174,7 @@ func (s *State) Selector(aPath string) (*Selector, error) {
 func NewStateType(rType reflect.Type, opts ...SelectorOption) *StateType {
 	rType = ensureStruct(rType)
 	ret := &StateType{rType: rType}
-	ret.selectors = NewSelectors(rType, opts...)
+	ret.selectors, ret.marker = NewSelectors(rType, opts...)
 	return ret
 }
 

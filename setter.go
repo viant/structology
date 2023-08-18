@@ -416,7 +416,7 @@ func anyToAny(src interface{}, field *xunsafe.Field, holder unsafe.Pointer) erro
 	}
 	reflectValuePtr := reflect.New(field.Type)
 	valuePtr := reflectValuePtr.Interface()
-	if err := json.Unmarshal(data, valuePtr); err != nil {
+	if err = json.Unmarshal(data, valuePtr); err != nil {
 		return err
 	}
 	value := reflectValuePtr.Elem().Interface()
