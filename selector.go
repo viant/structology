@@ -138,6 +138,14 @@ func (s *Selector) asStringValue(ptr unsafe.Pointer, opts []PathOption) string {
 	return value.(string) //panic is value is not boolean
 }
 
+func (s *Selector) Has(ptr unsafe.Pointer, opts ...PathOption) bool {
+	_, holderPtr, aPath := s.upstreamWithMarker(ptr, opts)
+	if aPath.marker == nil {
+		return true
+	}
+	return aPath.marker.IsSet(holderPtr, int(aPath.field.Index))
+}
+
 // SetValue sets selector value
 func (s *Selector) SetValue(ptr unsafe.Pointer, value interface{}, opts ...PathOption) (err error) {
 	options, holderPtr, aPath := s.upstreamWithMarker(ptr, opts)

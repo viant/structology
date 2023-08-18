@@ -28,6 +28,16 @@ func (s *StateType) Lookup(name string) *Selector {
 	return s.selectors.Lookup(name)
 }
 
+// Type returns state underlying reflect type
+func (s *StateType) Type() reflect.Type {
+	return s.rType
+}
+
+func (s *StateType) IsDefined() bool {
+	return len(s.selectors) > 0
+}
+
+// Type returns state type
 func (s *State) Type() *StateType {
 	return s.stateType
 }
@@ -56,14 +66,13 @@ func (s *State) SetValue(aPath string, value interface{}, pathOptions ...PathOpt
 	return selector.SetValue(s.ptr, value, pathOptions...)
 }
 
-// Set sets primitive value
-func (s *State) Set(aPath string, value interface{}, pathOptions ...PathOption) error {
+// SetPrimitive sets primitive value
+func (s *State) SetPrimitive(aPath string, value interface{}, pathOptions ...PathOption) error {
 	selector, err := s.Selector(aPath)
 	if err != nil {
 		return err
 	}
-	selector.Set(s.ptr, value, pathOptions...)
-	return nil
+	return selector.Set(s.ptr, value, pathOptions...)
 }
 
 // SetString set string for supplied state path
