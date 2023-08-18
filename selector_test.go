@@ -246,3 +246,55 @@ func TestNewSelector(t *testing.T) {
 	}
 
 }
+
+func TestSetter(t *testing.T) {
+
+	var testCases = []struct {
+		description string
+		new         func() interface{}
+		selector    string
+		expect      interface{}
+		value       interface{}
+	}{
+		{
+			description: "repeated int",
+			selector:    "Values",
+			new: func() interface{} {
+				type Foo struct {
+					Id     int
+					Values []int
+				}
+				return &Foo{}
+			},
+			value:  "1,2,3",
+			expect: []int{1, 2, 3},
+		},
+		{
+			description: "repeated int",
+			selector:    "Values",
+			new: func() interface{} {
+				type Bar struct {
+					Id     int
+					Values []float64
+				}
+				return &Bar{}
+			},
+			value:  "1,2,3.1",
+			expect: []float64{1.0, 2.0, 3.1},
+		},
+	}
+
+	for _, testCase := range testCases {
+
+		value := testCase.new()
+		valueType := reflect.TypeOf(value)
+		stateType := NewStateType(valueType)
+		state := stateType.WithValue(value)
+		err := state.SetValue(testCase.selector, testCase.value)
+		assert.Nil(t, err, testCase.description)
+
+		actual, err := state.Value(testCase.selector)
+		assert.Nil(t, err, testCase.description)
+		assert.EqualValues(t, testCase.expect, actual, testCase.description)
+	}
+}

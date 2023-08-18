@@ -47,8 +47,7 @@ func (s *State) SetValue(aPath string, value interface{}, pathOptions ...PathOpt
 	if err != nil {
 		return err
 	}
-	selector.SetValue(s.ptr, value, pathOptions...)
-	return nil
+	return selector.SetValue(s.ptr, value, pathOptions...)
 }
 
 // Set sets primitive value
@@ -119,6 +118,15 @@ func (s *State) Value(aPath string, pathOptions ...PathOption) (interface{}, err
 		return nil, err
 	}
 	return selector.Value(s.ptr, pathOptions...), nil
+}
+
+// Values returns a values for supplied path
+func (s *State) Values(aPath string, pathOptions ...PathOption) ([]interface{}, error) {
+	selector, err := s.Selector(aPath)
+	if err != nil {
+		return nil, err
+	}
+	return selector.Values(s.ptr, pathOptions...), nil
 }
 
 // Bool returns a value for supplied path

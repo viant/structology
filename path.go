@@ -3,15 +3,18 @@ package structology
 import (
 	"fmt"
 	"github.com/viant/xunsafe"
+	"reflect"
 	"unsafe"
 )
 
 type (
 	path struct {
-		field  *xunsafe.Field
-		slice  *xunsafe.Slice
-		marker *Marker
-		isPtr  bool
+		field     *xunsafe.Field
+		kind      reflect.Kind
+		slice     *xunsafe.Slice
+		marker    *Marker
+		isPtr     bool
+		converter *converter
 	}
 
 	paths []*path

@@ -64,6 +64,15 @@ func (s *Selector) Value(ptr unsafe.Pointer, opts ...PathOption) interface{} {
 	return leafField.field.Value(holderPtr)
 }
 
+// Value returns selector value
+func (s *Selector) Values(ptr unsafe.Pointer, opts ...PathOption) []interface{} {
+	value := s.Value(ptr, opts...)
+	if value == nil {
+		return nil
+	}
+	return value.([]interface{})
+}
+
 func (s *Selector) Bool(ptr unsafe.Pointer, opts ...PathOption) bool {
 	if !s.useSlice {
 		holderPtr, leafField := s.paths.upstream(ptr, nil)
@@ -130,25 +139,49 @@ func (s *Selector) asStringValue(ptr unsafe.Pointer, opts []PathOption) string {
 }
 
 // SetValue sets selector value
-func (s *Selector) SetValue(ptr unsafe.Pointer, value interface{}, opts ...PathOption) {
-	options, holderPtr, leafPath := s.upstreamWithMarker(ptr, opts)
-	if leafPath.slice != nil && options.hasIndex() {
-		leafPath.setSliceItem(holderPtr, value, options)
-		return
-	}
-	_ = leafPath.setMarker(holderPtr)
-	leafPath.field.SetValue(holderPtr, value)
-}
-
-// Set sets selector value
-func (s *Selector) Set(ptr unsafe.Pointer, value interface{}, opts ...PathOption) {
+func (s *Selector) SetValue(ptr unsafe.Pointer, value interface{}, opts ...PathOption) (err error) {
 	options, holderPtr, aPath := s.upstreamWithMarker(ptr, opts)
 	if aPath.slice != nil && options.hasIndex() {
 		aPath.setSliceItem(holderPtr, value, options)
-		return
+		return nil
 	}
 	_ = aPath.setMarker(holderPtr)
-	aPath.field.Set(holderPtr, value)
+
+	srcType := reflect.TypeOf(value)
+	conv := aPath.converter
+	if conv != nil && conv.inputType == srcType {
+		return conv.setter(value, aPath.field, holderPtr)
+	}
+	if srcType == aPath.field.Type {
+		aPath.field.SetValue(holderPtr, value)
+		return nil
+	}
+	conv = &converter{inputType: srcType, setter: lookupSetter(srcType, aPath.field.Type)}
+	aPath.converter = conv
+	return conv.setter(value, aPath.field, holderPtr)
+}
+
+// Set sets selector value
+func (s *Selector) Set(ptr unsafe.Pointer, value interface{}, opts ...PathOption) error {
+	options, holderPtr, aPath := s.upstreamWithMarker(ptr, opts)
+	if aPath.slice != nil && options.hasIndex() {
+		aPath.setSliceItem(holderPtr, value, options)
+		return nil
+	}
+	_ = aPath.setMarker(holderPtr)
+
+	srcType := reflect.TypeOf(value)
+	conv := aPath.converter
+	if conv != nil && conv.inputType == srcType {
+		return conv.setter(value, aPath.field, holderPtr)
+	}
+	if srcType == aPath.field.Type {
+		aPath.field.Set(holderPtr, value)
+		return nil
+	}
+	conv = &converter{inputType: srcType, setter: lookupSetter(srcType, aPath.field.Type)}
+	aPath.converter = conv
+	return conv.setter(value, aPath.field, holderPtr)
 }
 
 // SetInt sets selector int value
@@ -236,7 +269,7 @@ func newSelectors(owner reflect.Type, ancestors paths, options *selectorOptions)
 	var result = make(Selectors, len(xStruct.Fields))
 	for i, field := range xStruct.Fields {
 
-		fieldPath := &path{field: &xStruct.Fields[i], isPtr: field.Kind() == reflect.Ptr, marker: marker}
+		fieldPath := &path{field: &xStruct.Fields[i], kind: field.Kind(), isPtr: field.Kind() == reflect.Ptr, marker: marker}
 		selector := &Selector{paths: append(ancestors, fieldPath)}
 		if sliceType := ensureSlice(field.Type); sliceType != nil {
 			fieldPath.slice = xunsafe.NewSlice(sliceType)
