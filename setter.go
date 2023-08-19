@@ -238,8 +238,15 @@ func int8ToFloat32(src interface{}, field *xunsafe.Field, structPtr unsafe.Point
 	return nil
 }
 
+func anyToInterface(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+	field.SetValue(structPtr, src)
+	return nil
+}
+
 func lookupSetter(src reflect.Type, dest reflect.Type) setter {
 	switch dest.Kind() {
+	case reflect.Interface:
+		return anyToInterface
 	case reflect.String:
 		switch src.Kind() {
 		case reflect.Struct:
