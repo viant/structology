@@ -70,7 +70,27 @@ func (s *Selector) Values(ptr unsafe.Pointer, opts ...PathOption) []interface{} 
 	if value == nil {
 		return nil
 	}
-	return value.([]interface{})
+	switch actual := value.(type) {
+	case []interface{}:
+		return actual
+	default:
+		valueType := reflect.TypeOf(value)
+		if valueType.Kind() == reflect.Slice {
+			return s.asValues(value, valueType)
+		}
+		return []interface{}{value}
+	}
+}
+
+func (s *Selector) asValues(value interface{}, valueType reflect.Type) []interface{} {
+	valuePtr := xunsafe.AsPointer(value)
+	xSlice := xunsafe.NewSlice(valueType)
+	sliceLen := xSlice.Len(valuePtr)
+	ret := make([]interface{}, sliceLen)
+	for i := 0; i < sliceLen; i++ {
+		ret[i] = xSlice.ValueAt(valuePtr, i)
+	}
+	return ret
 }
 
 func (s *Selector) Bool(ptr unsafe.Pointer, opts ...PathOption) bool {
