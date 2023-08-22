@@ -16,57 +16,90 @@ type (
 		inputType reflect.Type
 		setter    setter
 	}
-	setter func(src interface{}, field *xunsafe.Field, holder unsafe.Pointer) error
+	setter func(src interface{}, field *xunsafe.Field, holder unsafe.Pointer, opts ...SetterOption) error
+
+	setterOptions struct {
+		timeLayout string
+	}
+
+	SetterOption func(o *setterOptions)
 )
 
-func timeToString(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func WithTimeLayout(timeLayout string) SetterOption {
+	return func(o *setterOptions) {
+		o.timeLayout = timeLayout
+	}
+}
+
+func (s *setterOptions) TimeLayout(fieldTag reflect.StructTag) string {
+	if layout, _ := fieldTag.Lookup("timeLayout"); layout != "" {
+		return layout
+	}
+	if s.timeLayout != "" {
+		return s.timeLayout
+	}
+	return time.RFC3339
+
+}
+
+func newSetterOption(opts []SetterOption) *setterOptions {
+	ret := &setterOptions{}
+	for _, opt := range opts {
+		opt(ret)
+	}
+	return ret
+}
+
+func timeToString(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(time.Time)
-	field.SetString(structPtr, value.Format(time.RFC3339))
+	options := newSetterOption(opts)
+	field.SetString(structPtr, value.Format(options.TimeLayout(field.Tag)))
 	return nil
 }
 
-func timePtrToString(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func timePtrToString(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(*time.Time)
 	if value == nil {
 		field.SetString(structPtr, "")
 		return nil
 	}
-	field.SetString(structPtr, value.Format(time.RFC3339))
+	options := newSetterOption(opts)
+	field.SetString(structPtr, value.Format(options.TimeLayout(field.Tag)))
 	return nil
 }
 
-func stringToString(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func stringToString(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(string)
 	field.SetString(structPtr, value)
 	return nil
 }
 
-func intToString(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func intToString(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	ptr := xunsafe.AsPointer(src)
 	value := *(*int)(ptr)
 	field.SetString(structPtr, strconv.Itoa(value))
 	return nil
 }
 
-func float64ToString(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func float64ToString(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(float64)
 	field.SetString(structPtr, strconv.FormatFloat(value, 'f', -1, 64))
 	return nil
 }
 
-func float32ToString(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func float32ToString(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(float32)
 	field.SetString(structPtr, strconv.FormatFloat(float64(value), 'f', -1, 32))
 	return nil
 }
 
-func boolToString(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func boolToString(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(bool)
 	field.SetString(structPtr, strconv.FormatBool(value))
 	return nil
 }
 
-func stringToInt(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func stringToInt(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(string)
 	intValue, err := strconv.Atoi(value)
 	if err != nil {
@@ -76,46 +109,46 @@ func stringToInt(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer
 	return nil
 }
 
-func intToInt(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func intToInt(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	ptr := xunsafe.AsPointer(src)
 	value := *(*int)(ptr)
 	field.SetInt(structPtr, value)
 	return nil
 }
-func int8ToInt(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func int8ToInt(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	ptr := xunsafe.AsPointer(src)
 	value := *(*int8)(ptr)
 	field.SetInt(structPtr, int(value))
 	return nil
 }
 
-func int16ToInt(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func int16ToInt(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	ptr := xunsafe.AsPointer(src)
 	value := *(*int16)(ptr)
 	field.SetInt(structPtr, int(value))
 	return nil
 }
 
-func int32ToInt(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func int32ToInt(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	ptr := xunsafe.AsPointer(src)
 	value := *(*int16)(ptr)
 	field.SetInt(structPtr, int(value))
 	return nil
 }
 
-func float64ToInt(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func float64ToInt(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(float64)
 	field.SetInt(structPtr, int(value))
 	return nil
 }
 
-func float32ToInt(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func float32ToInt(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(float32)
 	field.SetInt(structPtr, int(value))
 	return nil
 }
 
-func stringToBool(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func stringToBool(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(string)
 	parseBool, err := strconv.ParseBool(value)
 	if err != nil {
@@ -125,32 +158,32 @@ func stringToBool(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointe
 	return nil
 }
 
-func intToBool(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func intToBool(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	ptr := xunsafe.AsPointer(src)
 	value := *(*int)(ptr)
 	field.SetBool(structPtr, value != 0)
 	return nil
 }
 
-func boolToBool(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func boolToBool(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(bool)
 	field.SetBool(structPtr, value)
 	return nil
 }
 
-func float64ToFloat64(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func float64ToFloat64(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(float64)
 	field.SetFloat64(structPtr, value)
 	return nil
 }
 
-func float32ToFloat64(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func float32ToFloat64(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(float32)
 	field.SetFloat64(structPtr, float64(value))
 	return nil
 }
 
-func stringToFloat64(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func stringToFloat64(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(string)
 	f, err := strconv.ParseFloat(value, 64)
 	if err != nil {
@@ -160,47 +193,47 @@ func stringToFloat64(src interface{}, field *xunsafe.Field, structPtr unsafe.Poi
 	return nil
 }
 
-func intToFloat64(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func intToFloat64(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	ptr := xunsafe.AsPointer(src)
 	value := *(*int)(ptr)
 	field.SetFloat64(structPtr, float64(value))
 	return nil
 }
 
-func int32ToFloat64(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func int32ToFloat64(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	ptr := xunsafe.AsPointer(src)
 	value := *(*int32)(ptr)
 	field.SetFloat64(structPtr, float64(value))
 	return nil
 }
 
-func int16ToFloat64(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func int16ToFloat64(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	ptr := xunsafe.AsPointer(src)
 	value := *(*int16)(ptr)
 	field.SetFloat64(structPtr, float64(value))
 	return nil
 }
 
-func int8ToFloat64(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func int8ToFloat64(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	ptr := xunsafe.AsPointer(src)
 	value := *(*int8)(ptr)
 	field.SetFloat64(structPtr, float64(value))
 	return nil
 }
 
-func float64ToFloat32(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func float64ToFloat32(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(float64)
 	field.SetFloat32(structPtr, float32(value))
 	return nil
 }
 
-func float32ToFloat32(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func float32ToFloat32(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(float32)
 	field.SetFloat32(structPtr, value)
 	return nil
 }
 
-func stringToFloat32(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func stringToFloat32(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(string)
 	f, err := strconv.ParseFloat(value, 32)
 	if err != nil {
@@ -210,35 +243,35 @@ func stringToFloat32(src interface{}, field *xunsafe.Field, structPtr unsafe.Poi
 	return nil
 }
 
-func intToFloat32(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func intToFloat32(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	ptr := xunsafe.AsPointer(src)
 	value := *(*int)(ptr)
 	field.SetFloat32(structPtr, float32(value))
 	return nil
 }
 
-func int32ToFloat32(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func int32ToFloat32(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	ptr := xunsafe.AsPointer(src)
 	value := *(*int32)(ptr)
 	field.SetFloat32(structPtr, float32(value))
 	return nil
 }
 
-func int16ToFloat32(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func int16ToFloat32(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	ptr := xunsafe.AsPointer(src)
 	value := *(*int16)(ptr)
 	field.SetFloat32(structPtr, float32(value))
 	return nil
 }
 
-func int8ToFloat32(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func int8ToFloat32(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	ptr := xunsafe.AsPointer(src)
 	value := *(*int8)(ptr)
 	field.SetFloat32(structPtr, float32(value))
 	return nil
 }
 
-func anyToInterface(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer) error {
+func anyToInterface(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	field.SetValue(structPtr, src)
 	return nil
 }
@@ -349,11 +382,39 @@ func lookupSetter(src reflect.Type, dest reflect.Type) setter {
 				return stringToFloat64s
 			}
 		}
+	case reflect.Struct:
+
+		if isTimeType(dest) {
+			switch src.Kind() {
+			case reflect.String:
+				return stringToTime
+			}
+		}
+	case reflect.Ptr:
+		if isTimeType(dest) {
+			switch src.Kind() {
+			case reflect.String:
+				return stringToTimePtr
+			}
+		}
 	}
 	return anyToAny
 }
 
-func stringToInts(src interface{}, field *xunsafe.Field, holder unsafe.Pointer) error {
+func ParseTime(layout, input string) (time.Time, error) {
+	if len(layout) == 0 {
+		layout = time.RFC3339
+	} //GetFieldValue returns field value
+	lastPosition := len(input)
+	if lastPosition >= len(layout) {
+		lastPosition = len(layout)
+	}
+	layout = layout[0:lastPosition]
+
+	return time.Parse(layout, input)
+}
+
+func stringToInts(src interface{}, field *xunsafe.Field, holder unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(string)
 	r := newRepeated(value, true)
 	n, err := r.AsInts()
@@ -364,7 +425,7 @@ func stringToInts(src interface{}, field *xunsafe.Field, holder unsafe.Pointer) 
 	return nil
 }
 
-func stringToInt64s(src interface{}, field *xunsafe.Field, holder unsafe.Pointer) error {
+func stringToInt64s(src interface{}, field *xunsafe.Field, holder unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(string)
 	r := newRepeated(value, true)
 	n, err := r.AsInt64s()
@@ -375,7 +436,7 @@ func stringToInt64s(src interface{}, field *xunsafe.Field, holder unsafe.Pointer
 	return nil
 }
 
-func stringToUints(src interface{}, field *xunsafe.Field, holder unsafe.Pointer) error {
+func stringToUints(src interface{}, field *xunsafe.Field, holder unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(string)
 	r := newRepeated(value, true)
 	n, err := r.AsUInts()
@@ -386,7 +447,7 @@ func stringToUints(src interface{}, field *xunsafe.Field, holder unsafe.Pointer)
 	return nil
 }
 
-func stringToStrings(src interface{}, field *xunsafe.Field, holder unsafe.Pointer) error {
+func stringToStrings(src interface{}, field *xunsafe.Field, holder unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(string)
 	r := newRepeated(value, true)
 	n := []string(r)
@@ -394,7 +455,7 @@ func stringToStrings(src interface{}, field *xunsafe.Field, holder unsafe.Pointe
 	return nil
 }
 
-func stringToFloat64s(src interface{}, field *xunsafe.Field, holder unsafe.Pointer) error {
+func stringToFloat64s(src interface{}, field *xunsafe.Field, holder unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(string)
 	r := newRepeated(value, true)
 	n, err := r.AsFloats64()
@@ -405,7 +466,7 @@ func stringToFloat64s(src interface{}, field *xunsafe.Field, holder unsafe.Point
 	return nil
 }
 
-func stringToFloat32s(src interface{}, field *xunsafe.Field, holder unsafe.Pointer) error {
+func stringToFloat32s(src interface{}, field *xunsafe.Field, holder unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(string)
 	r := newRepeated(value, true)
 	n, err := r.AsFloats32()
@@ -416,7 +477,29 @@ func stringToFloat32s(src interface{}, field *xunsafe.Field, holder unsafe.Point
 	return nil
 }
 
-func anyToAny(src interface{}, field *xunsafe.Field, holder unsafe.Pointer) error {
+func stringToTime(src interface{}, field *xunsafe.Field, holder unsafe.Pointer, opts ...SetterOption) (err error) {
+	var ret time.Time
+	srcValue := src.(string)
+	options := newSetterOption(opts)
+	if ret, err = ParseTime(options.TimeLayout(field.Tag), srcValue); err != nil {
+		return err
+	}
+	field.SetValue(holder, ret)
+	return nil
+}
+
+func stringToTimePtr(src interface{}, field *xunsafe.Field, holder unsafe.Pointer, opts ...SetterOption) error {
+	srcValue := src.(string)
+	options := newSetterOption(opts)
+	ret, err := ParseTime(options.TimeLayout(field.Tag), srcValue)
+	if err != nil {
+		return err
+	}
+	field.SetValue(holder, &ret)
+	return nil
+}
+
+func anyToAny(src interface{}, field *xunsafe.Field, holder unsafe.Pointer, opts ...SetterOption) error {
 	data, err := json.Marshal(src)
 	if err != nil {
 		return err
