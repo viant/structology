@@ -10,6 +10,7 @@ import (
 type (
 	//StateType represents a state type
 	StateType struct {
+		isPtr     bool
 		rType     reflect.Type
 		selectors Selectors
 		marker    *Marker
@@ -19,6 +20,7 @@ type (
 	State struct {
 		stateType *StateType
 		value     interface{}
+		valuePtr  interface{}
 		ptr       unsafe.Pointer
 	}
 )
@@ -73,6 +75,19 @@ func (s *State) Pointer() unsafe.Pointer {
 // State return state value
 func (s *State) State() interface{} {
 	return s.value
+}
+
+// Sync syncs value ptr ot value if out of sync
+func (s *State) Sync() {
+	if s.valuePtr != nil && s.valuePtr != s.value {
+		s.value = reflect.ValueOf(s.valuePtr).Elem().Interface()
+		s.ptr = xunsafe.AsPointer(s.value)
+	}
+}
+
+// StatePtr return state value
+func (s *State) StatePtr() interface{} {
+	return s.valuePtr
 }
 
 // SetValue set state value
@@ -199,8 +214,7 @@ func (s *State) Selector(aPath string) (*Selector, error) {
 
 // NewStateType creates a state type
 func NewStateType(rType reflect.Type, opts ...SelectorOption) *StateType {
-	rType = ensureStruct(rType)
-	ret := &StateType{rType: rType}
+	ret := &StateType{rType: rType, isPtr: rType.Kind() == reflect.Ptr}
 	ret.selectors, ret.marker = NewSelectors(rType, opts...)
 	return ret
 }
@@ -213,6 +227,25 @@ func (t *StateType) WithValue(value interface{}) *State {
 
 // NewState creates a state
 func (t *StateType) NewState() *State {
-	value := reflect.New(t.rType).Elem().Interface()
-	return &State{stateType: t, value: value, ptr: xunsafe.AsPointer(value)}
+	var valuePtr reflect.Value
+	if t.isPtr {
+		valuePtr = reflect.New(t.rType.Elem())
+	} else {
+		valuePtr = reflect.New(t.rType)
+	}
+	if t.rType.Kind() == reflect.Slice {
+		sliceValue := reflect.MakeSlice(t.rType, 0, 1)
+		valuePtr.Elem().Set(sliceValue)
+	}
+
+	ret := &State{stateType: t}
+	if t.isPtr {
+		ret.value = valuePtr.Interface()
+		ret.valuePtr = ret.value
+	} else {
+		ret.valuePtr = valuePtr.Interface()
+		ret.value = valuePtr.Elem().Interface()
+	}
+	ret.ptr = xunsafe.AsPointer(ret.value)
+	return ret
 }
