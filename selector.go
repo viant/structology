@@ -43,11 +43,16 @@ func (s Selectors) Lookup(name string) *Selector {
 
 // Type returns selector result type
 func (s *Selector) Type() reflect.Type {
-	leaf := s.paths[len(s.paths)-1]
+	leaf := s.leaf()
 	if leaf.field != nil {
 		return leaf.field.Type
 	}
 	return leaf.slice.Type
+}
+
+func (s *Selector) leaf() *path {
+	leaf := s.paths[len(s.paths)-1]
+	return leaf
 }
 
 // Value returns selector value
@@ -316,6 +321,24 @@ func newSelectors(owner reflect.Type, ancestors paths, options *selectorOptions)
 		selector.useSlice = selector.paths.useSlice()
 	}
 	return result, marker
+}
+
+// Name returns selector leaf name
+func (s *Selector) Name() string {
+	leaf := s.leaf()
+	if leaf == nil || leaf.field == nil {
+		return ""
+	}
+	return leaf.field.Name
+}
+
+// Tag returns selector leaf struct tag
+func (s *Selector) Tag() reflect.StructTag {
+	leaf := s.leaf()
+	if leaf == nil || leaf.field == nil {
+		return ""
+	}
+	return leaf.field.Tag
 }
 
 // WithCustomizedNames returns selector option with customized names use by selector indexer
