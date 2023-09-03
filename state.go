@@ -30,6 +30,21 @@ func (s *StateType) Lookup(name string) *Selector {
 	return s.selectors.Lookup(name)
 }
 
+// MatchByTag matches selector by tag name
+func (s *StateType) MatchByTag(tagName string) []*Selector {
+	var result = make([]*Selector, 0)
+	for i, candidate := range s.selectors {
+		tag := candidate.leaf().field.Tag
+		if tag == "" {
+			continue
+		}
+		if _, ok := tag.Lookup(tagName); ok {
+			result = append(result, s.selectors[i])
+		}
+	}
+	return result
+}
+
 // Type returns state underlying reflect type
 func (s *StateType) Type() reflect.Type {
 	return s.rType
