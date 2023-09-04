@@ -3,6 +3,7 @@ package structology
 import (
 	"github.com/viant/xunsafe"
 	"reflect"
+	"strings"
 	"unsafe"
 )
 
@@ -48,6 +49,14 @@ func (s *Selector) Type() reflect.Type {
 		return leaf.field.Type
 	}
 	return leaf.slice.Type
+}
+
+func (s *Selector) Path() string {
+	var result = []string{}
+	for _, aPath := range s.paths {
+		result = append(result, aPath.field.Name)
+	}
+	return strings.Join(result, ".")
 }
 
 func (s *Selector) leaf() *path {
