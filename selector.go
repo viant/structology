@@ -51,6 +51,11 @@ func (s *Selector) Type() reflect.Type {
 	return leaf.slice.Type
 }
 
+func (s *Selector) IsAnonymous() bool {
+	leaf := s.leaf()
+	return leaf.field.Anonymous
+}
+
 func (s *Selector) Path() string {
 	var result = []string{}
 	for _, aPath := range s.paths {
