@@ -33,15 +33,15 @@ func (s *StateType) Lookup(name string) *Selector {
 // MatchByTag matches selector by tag name
 func (s *StateType) MatchByTag(tagName string) []*Selector {
 	var result = make([]*Selector, 0)
-	for i, candidate := range s.selectors {
-		tag := candidate.leaf().field.Tag
+	s.selectors.Each(func(key string, selector *Selector) {
+		tag := selector.leaf().field.Tag
 		if tag == "" {
-			continue
+			return
 		}
 		if _, ok := tag.Lookup(tagName); ok {
-			result = append(result, s.selectors[i])
+			result = append(result, selector)
 		}
-	}
+	})
 	return result
 }
 
@@ -51,7 +51,7 @@ func (s *StateType) Type() reflect.Type {
 }
 
 func (s *StateType) IsDefined() bool {
-	return len(s.selectors) > 0
+	return len(s.selectors.Items) > 0
 }
 
 // Type returns state type
@@ -220,11 +220,11 @@ func (s *State) Float64(aPath string, pathOptions ...PathOption) (float64, error
 
 // Selector returns a state selector for supplied path
 func (s *State) Selector(aPath string) (*Selector, error) {
-	selector, ok := s.stateType.selectors[aPath]
+	index, ok := s.stateType.selectors.Map[aPath]
 	if !ok {
 		return nil, fmt.Errorf("failed to lookup path %v at %s", aPath, s.stateType.rType.String())
 	}
-	return selector, nil
+	return s.stateType.selectors.Items[index], nil
 }
 
 // NewStateType creates a state type

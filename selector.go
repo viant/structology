@@ -16,7 +16,10 @@ type (
 	}
 
 	//Selectors indexed selectors
-	Selectors map[string]*Selector
+	Selectors struct {
+		Map   map[string]int
+		Items []*Selector
+	}
 
 	selectorOptions struct {
 		markerOption Option
@@ -39,7 +42,27 @@ func (o *selectorOptions) apply(opts []SelectorOption) {
 }
 
 func (s Selectors) Lookup(name string) *Selector {
-	return s[name]
+	index, ok := s.Map[name]
+	if !ok {
+		return nil
+	}
+	return s.Items[index]
+}
+
+func (s *Selectors) Add(key string, selector *Selector) {
+	index := len(s.Items)
+	s.Map[key] = index
+	s.Items = append(s.Items, selector)
+}
+
+func (s *Selectors) Each(cb func(key string, selector *Selector)) {
+	for k, index := range s.Map {
+		cb(k, s.Items[index])
+	}
+}
+
+func selectors() Selectors {
+	return Selectors{Map: make(map[string]int)}
 }
 
 // Type returns selector result type
@@ -312,7 +335,7 @@ func newSelectors(owner reflect.Type, ancestors paths, options *selectorOptions)
 	if HasSetMarker(aStruct) {
 		marker, _ = NewMarker(owner)
 	}
-	var result = make(Selectors, len(xStruct.Fields))
+	var result = selectors()
 	for i, field := range xStruct.Fields {
 
 		fieldPath := &path{field: &xStruct.Fields[i], kind: field.Kind(), isPtr: field.Kind() == reflect.Ptr, marker: marker}
@@ -327,9 +350,9 @@ func newSelectors(owner reflect.Type, ancestors paths, options *selectorOptions)
 			selector.Selectors, _ = newSelectors(field.Type, selector.paths, options)
 		}
 		for _, key := range options.getNames(field.Name, field.Tag) {
-			result[key] = selector
-			for subKey, sel := range selector.Selectors {
-				result[key+"."+subKey] = sel
+			result.Add(key, selector)
+			for subKey, index := range selector.Selectors.Map {
+				result.Add(key+"."+subKey, selector.Selectors.Items[index])
 			}
 		}
 		selector.useSlice = selector.paths.useSlice()
