@@ -276,6 +276,7 @@ func anyToInterface(src interface{}, field *xunsafe.Field, structPtr unsafe.Poin
 	return nil
 }
 
+// TODO add conversion []interface to specific primitive slcies
 func lookupSetter(src reflect.Type, dest reflect.Type) setter {
 	switch dest.Kind() {
 	case reflect.Interface:
