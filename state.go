@@ -30,7 +30,7 @@ func (s *StateType) Lookup(name string) *Selector {
 	return s.selectors.Lookup(name)
 }
 
-func (s *StateType) RootSelector() []*Selector {
+func (s *StateType) RootSelectors() []*Selector {
 	return s.selectors.Root
 }
 
