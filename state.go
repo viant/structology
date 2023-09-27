@@ -30,6 +30,10 @@ func (s *StateType) Lookup(name string) *Selector {
 	return s.selectors.Lookup(name)
 }
 
+func (s *StateType) RootSelector() []*Selector {
+	return s.selectors.Root
+}
+
 // MatchByTag matches selector by tag name
 func (s *StateType) MatchByTag(tagName string) []*Selector {
 	var result = make([]*Selector, 0)

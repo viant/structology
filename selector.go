@@ -19,6 +19,7 @@ type (
 	Selectors struct {
 		Map   map[string]int
 		Items []*Selector
+		Root  []*Selector
 	}
 
 	selectorOptions struct {
@@ -53,6 +54,9 @@ func (s *Selectors) Add(key string, selector *Selector) {
 	index := len(s.Items)
 	s.Map[key] = index
 	s.Items = append(s.Items, selector)
+	if strings.Index(key, ".") == -1 {
+		s.Root = append(s.Root, selector)
+	}
 }
 
 func (s *Selectors) Each(cb func(key string, selector *Selector)) {
