@@ -74,6 +74,16 @@ func (s *State) MarkerHolder() interface{} {
 	return s.stateType.marker.holder.Value(s.ptr)
 }
 
+func (s *State) EnsureMarker() {
+	if !s.HasMarker() {
+		return
+	}
+	if s.stateType.marker.holder.Value(s.ptr) == nil {
+		v := reflect.New(s.stateType.marker.holder.Type).Elem().Interface()
+		s.stateType.marker.holder.SetValue(s.ptr, v)
+	}
+}
+
 // Marker returns marker
 func (s *StateType) Marker() *Marker {
 	return s.marker
