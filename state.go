@@ -78,9 +78,8 @@ func (s *State) EnsureMarker() {
 	if !s.HasMarker() || s.stateType.marker.holder.Kind() == reflect.Struct {
 		return
 	}
-
 	if s.stateType.marker.holder.IsNil(s.ptr) {
-		v := reflect.New(s.stateType.marker.holder.Type).Elem().Interface()
+		v := reflect.New(s.stateType.marker.holder.Type.Elem()).Interface()
 		s.stateType.marker.holder.SetValue(s.ptr, v)
 	}
 }
