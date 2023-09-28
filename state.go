@@ -75,7 +75,7 @@ func (s *State) MarkerHolder() interface{} {
 }
 
 func (s *State) EnsureMarker() {
-	if !s.HasMarker() {
+	if !s.HasMarker() || s.stateType.marker.holder.Kind() == reflect.Struct {
 		return
 	}
 	if s.stateType.marker.holder.Value(s.ptr) == nil {
