@@ -67,6 +67,24 @@ func (t *Tag) update(key string, value string, strictMode bool) error {
 	return nil
 }
 
+var tagKeys = []string{
+	"name",
+	"dateformat",
+	"isodateformat",
+	"timelayout", "datelayout", "rfc3339",
+	"format",
+	"caseformat",
+	"ignorecaseformatter",
+	"inline", "embed",
+	"omitempty",
+	"ignore", "transient",
+	"lang", "language",
+}
+
+func (t *Tag) SupportedKeys() []string {
+	return tagKeys
+}
+
 func Parse(tag reflect.StructTag, names ...string) (*Tag, error) {
 	ret := &Tag{}
 
