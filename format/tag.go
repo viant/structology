@@ -67,22 +67,22 @@ func (t *Tag) update(key string, value string, strictMode bool) error {
 	return nil
 }
 
-var tagKeys = []string{
-	"name",
-	"dateformat",
-	"isodateformat",
-	"timelayout", "datelayout", "rfc3339",
-	"format",
-	"caseformat",
-	"ignorecaseformatter",
-	"inline", "embed",
-	"omitempty",
-	"ignore", "transient",
-	"lang", "language",
+var tagKeys = map[string]bool{
+	"name":          true,
+	"dateformat":    true,
+	"isodateformat": true,
+	"timelayout":    true, "datelayout": true, "rfc3339": true,
+	"format":              true,
+	"caseformat":          true,
+	"ignorecaseformatter": true,
+	"inline":              true, "embed": true,
+	"omitempty": true,
+	"ignore":    true, "transient": true,
+	"lang": true, "language": true,
 }
 
-func (t *Tag) SupportedKeys() []string {
-	return tagKeys
+func (t *Tag) IsValidKey(key string) bool {
+	return tagKeys[key]
 }
 
 func Parse(tag reflect.StructTag, names ...string) (*Tag, error) {
