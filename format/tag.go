@@ -14,7 +14,7 @@ const (
 )
 
 type Tag struct {
-	Name string //source for output name, is case formater is not defined, use Name otherwise use Name with UpperCamel format
+	Name string //source for output name, is case formater is not defined, use Name otherwise use Name in UpperCamel format
 	//to format output name with specified CaseFormat
 
 	CaseFormat string
