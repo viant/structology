@@ -81,7 +81,7 @@ var tagKeys = map[string]bool{
 	"lang": true, "language": true,
 }
 
-func (t *Tag) IsValidKey(key string) bool {
+func IsValidTagKey(key string) bool {
 	return tagKeys[key]
 }
 
