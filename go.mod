@@ -4,7 +4,9 @@ go 1.17
 
 require (
 	github.com/stretchr/testify v1.8.4
+	github.com/viant/parsly v0.3.0
 	github.com/viant/xunsafe v0.9.0
+	golang.org/x/text v0.4.0
 )
 
 require (

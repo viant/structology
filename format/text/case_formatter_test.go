@@ -43,7 +43,7 @@ func TestCase_Format(t *testing.T) {
 			expect:      "Abc xyz id",
 		},
 		{
-			description: "lower camel dash",
+			description: " dash",
 			input:       "abcXyzID",
 			from:        CaseFormatLowerCamel,
 			to:          CaseFormatDash,

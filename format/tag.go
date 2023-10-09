@@ -9,22 +9,31 @@ import (
 	"strings"
 )
 
+const (
+	TagName = "format"
+)
+
 type Tag struct {
 	Name string //source for output name, is case formater is not defined, use Name otherwise use Name with UpperCamel format
 	//to format output name with specified CaseFormat
+
+	CaseFormat string
+
 	DateFormat string
 	TimeLayout string
 	Format     string
 
+	Inline    bool
+	Omitempty bool
+	Ignore    bool
+
+	//TBD
 	Precision int
 	Scale     int
 
-	Language   string
-	CaseFormat string
-	Inline     bool
-	Omitempty  bool
-	Ignore     bool
-	formatter  *text.CaseFormatter
+	Language string
+
+	formatter *text.CaseFormatter
 }
 
 func (t *Tag) update(key string, value string, strictMode bool) error {
@@ -53,13 +62,13 @@ func (t *Tag) update(key string, value string, strictMode bool) error {
 			return fmt.Errorf("Unknown key " + key)
 		}
 	}
-
 	return nil
 }
 
 func Parse(tag reflect.StructTag, names ...string) (*Tag, error) {
 	ret := &Tag{}
 
+	names = append([]string{TagName}, names...)
 	for i, name := range names {
 		encoded := tag.Get(name)
 		if encoded == "" {

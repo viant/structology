@@ -54,6 +54,9 @@ func (c CaseFormat) Index() int {
 	case CaseFormatUpperDash:
 		return 11
 	default:
+		if alternative := NewCaseFormat(string(c)); alternative != CaseFormatUndefined {
+			return alternative.Index()
+		}
 		return 0
 	}
 }

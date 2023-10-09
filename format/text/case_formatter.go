@@ -58,10 +58,20 @@ func (c *CaseFormatter) Format(src string) string {
 	return result.String()
 }
 
+func (c CaseFormat) ensureDefined() CaseFormat {
+	if c.IsDefined() {
+		return c
+	}
+	return NewCaseFormat(string(c))
+}
+
 func (c CaseFormat) To(to CaseFormat) *CaseFormatter {
+	c = c.ensureDefined()
+	to = to.ensureDefined()
 	if c.Index() == 0 || to.Index() == 0 {
 		return &CaseFormatter{nop: true}
 	}
+
 	index := (c.Index()-1)*10 + to.Index() - 1
 	mux.RLock()
 	ret := caseFormatter[index]
