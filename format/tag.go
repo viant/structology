@@ -49,6 +49,8 @@ func (t *Tag) update(key string, value string, strictMode bool) error {
 		t.Format = value
 	case "caseformat":
 		t.CaseFormat = value
+	case "ignorecaseformatter":
+		t.CaseFormat = "-"
 	case "inline", "embed":
 		t.Inline = true
 	case "omitempty":
