@@ -17,16 +17,28 @@ func (t *Tag) FormatTime(ts *time.Time) string {
 }
 
 func (t *Tag) FormatName() string {
-	if t.CaseFormat == "-" || t.CaseFormat == "" {
+	return t.CaseFormatName("")
+}
+
+func (t *Tag) CaseFormatName(defaultCaseFormat text.CaseFormat) string {
+	if t.CaseFormat == "-" {
 		return t.Name
 	}
+	caseFormat := t.CaseFormat
+	if caseFormat == "" {
+		caseFormat = string(defaultCaseFormat)
+	}
+	if caseFormat == "" {
+		return t.Name
+	}
+
 	if t.formatter != nil {
-		if string(t.formatter.To()) != t.Format {
+		if string(t.formatter.To()) != caseFormat {
 			t.formatter = nil
 		}
 	}
 	if t.formatter == nil {
-		to := text.NewCaseFormat(t.CaseFormat)
+		to := text.NewCaseFormat(caseFormat)
 		t.formatter = text.CaseFormatUpperCamel.To(to)
 		t.CaseFormat = string(to)
 	}
