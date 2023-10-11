@@ -48,10 +48,10 @@ func (t *Tag) CaseFormatName(defaultCaseFormat text.CaseFormat) string {
 func (t *Tag) FormatFloat(f float64) (string, error) {
 	//TODO load printer language from tag
 	p := message.NewPrinter(language.AmericanEnglish)
-	switch t.Format {
+	switch t.FormatMask {
 	case "Decimal":
 		return p.Sprintf("%v", number.Decimal(f)), nil
 	default:
-		return "", fmt.Errorf("foramt: %s not yet supported", t.Format)
+		return "", fmt.Errorf("foramt: %s not yet supported", t.FormatMask)
 	}
 }

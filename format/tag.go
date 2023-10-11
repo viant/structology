@@ -21,7 +21,7 @@ type Tag struct {
 
 	DateFormat string
 	TimeLayout string
-	Format     string
+	FormatMask string
 
 	Inline    bool
 	Omitempty bool
@@ -46,7 +46,7 @@ func (t *Tag) update(key string, value string, strictMode bool) error {
 	case "timelayout", "datelayout", "rfc3339":
 		t.TimeLayout = value
 	case "format":
-		t.Format = value
+		t.FormatMask = value
 	case "caseformat":
 		t.CaseFormat = value
 	case "ignorecaseformatter":
