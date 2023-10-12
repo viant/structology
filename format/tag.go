@@ -26,7 +26,7 @@ type Tag struct {
 	Nullable  *bool `tag:"nullable"`
 	Inline    bool  `tag:"inline"`
 	Omitempty bool  `tag:"omitempty"`
-	Ignore    bool  `tag:"-"`
+	Ignore    bool  `tag:"ignore"`
 
 	//TBD
 	Precision int    `tag:"-"`

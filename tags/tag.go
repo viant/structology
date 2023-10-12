@@ -1,6 +1,10 @@
 package tags
 
 import (
+	"fmt"
+	"github.com/viant/structology/format/text"
+	"github.com/viant/xunsafe"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -122,4 +126,50 @@ func NewTags(tagLiteral string) Tags {
 		result = append(result, aTag)
 	}
 	return result
+}
+
+// NewTag creates a tag for supplied tag type
+func NewTag(name string, value interface{}) *Tag {
+	if value == nil {
+		return nil
+	}
+
+	rType := reflect.TypeOf(value)
+	xStruct := xunsafe.NewStruct(rType)
+	ptr := xunsafe.AsPointer(value)
+	ret := &Tag{Name: name}
+	for i := range xStruct.Fields {
+		aField := &xStruct.Fields[i]
+		name := aField.Tag.Get(TagName)
+		if name == "-" {
+			continue
+		}
+		if name == "" {
+			caseFormat := text.DetectCaseFormat(aField.Name)
+			name = caseFormat.Format(aField.Name, text.CaseFormatLowerCamel)
+		}
+
+		value := aField.Value(ptr)
+		switch actual := value.(type) {
+		case string:
+			ret.Append(name + "=" + wrapValueIfNeeded(actual))
+		case int:
+			ret.Append(name + "=" + strconv.Itoa(actual))
+		case bool:
+			ret.Append(name + "=" + strconv.FormatBool(actual))
+		case float64:
+			ret.Append(name + "=" + strconv.FormatFloat(actual, 'f', -1, 32))
+		default:
+			aText := fmt.Sprintf("%s", actual)
+			ret.Append(name + "=" + wrapValueIfNeeded(aText))
+		}
+	}
+	return ret
+}
+
+func wrapValueIfNeeded(actual string) string {
+	if strings.Contains(actual, ",") && !strings.HasPrefix(actual, "{") {
+		actual = "{" + actual + "}"
+	}
+	return actual
 }
