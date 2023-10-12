@@ -158,9 +158,9 @@ func NewCaseFormat(name string) CaseFormat {
 		return CaseFormatLowerDash
 	case "upperdash", "ud":
 		return CaseFormatUpperDash
-	case "lowercamel", "lc", "lowerpascal":
+	case "lowercamel", "lc", "lowerpascal", "lp":
 		return CaseFormatLowerCamel
-	case "uppercamel", "up", "upperpascal":
+	case "uppercamel", "uc", "upperpascal", "up":
 		return CaseFormatUpperCamel
 	case "lowerunderscore", "lu", "lowersnake":
 		return CaseFormatLowerUnderscore
