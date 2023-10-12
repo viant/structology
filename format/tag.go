@@ -22,10 +22,11 @@ type Tag struct {
 	DateFormat string `tag:"dataFormat"`
 	TimeLayout string `tag:"timeLayout"`
 	FormatMask string `tag:"formatMask"`
-	Nullable   *bool  `tag:"nullable"`
-	Inline     bool   `tag:"inline"`
-	Omitempty  bool   `tag:"omitempty"`
-	Ignore     bool   `tag:"-"`
+	//Nullable flag to output null value as opposed zero/empty value
+	Nullable  *bool `tag:"nullable"`
+	Inline    bool  `tag:"inline"`
+	Omitempty bool  `tag:"omitempty"`
+	Ignore    bool  `tag:"-"`
 
 	//TBD
 	Precision int    `tag:"-"`
