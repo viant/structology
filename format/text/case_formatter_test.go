@@ -56,12 +56,21 @@ func TestCase_Format(t *testing.T) {
 			to:          CaseFormatLowerUnderscore,
 			expect:      "abc_xyz_id",
 		},
+		{
+			description: "upper camel to lower camel",
+			input:       "Vendor",
+			from:        CaseFormatUpperCamel,
+			to:          NewCaseFormat("lc"),
+			expect:      "vendor",
+		},
 	}
 
 	for _, useCase := range useCases {
 		formatter := useCase.from.To(useCase.to)
 		actual := formatter.Format(useCase.input)
 		assert.EqualValues(t, useCase.expect, actual, useCase.description)
+		assert.EqualValues(t, useCase.expect, useCase.from.Format(useCase.input, useCase.to), useCase.description)
+
 	}
 
 }
