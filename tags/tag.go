@@ -169,9 +169,14 @@ func NewTag(name string, value interface{}) *Tag {
 	ret := &Tag{Name: name}
 	for i := range xStruct.Fields {
 		aField := &xStruct.Fields[i]
+		omitEmpty := false
 		name := aField.Tag.Get(TagName)
 		if name == "-" {
 			continue
+		}
+		if index := strings.Index(name, ",omitempty"); index != -1 {
+			omitEmpty = true
+			name = name[:index]
 		}
 		if name == "" {
 			caseFormat := text.DetectCaseFormat(aField.Name)
@@ -182,6 +187,9 @@ func NewTag(name string, value interface{}) *Tag {
 
 		switch actual := value.(type) {
 		case string:
+			if omitEmpty && actual == "" {
+				continue
+			}
 			ret.Append(name + "=" + wrapValueIfNeeded(actual))
 		case *string:
 			if actual == nil {
@@ -189,6 +197,10 @@ func NewTag(name string, value interface{}) *Tag {
 			}
 			ret.Append(name + "=" + wrapValueIfNeeded(*actual))
 		case int:
+			if omitEmpty && actual == 0 {
+				continue
+			}
+
 			ret.Append(name + "=" + strconv.Itoa(actual))
 		case *int:
 			if actual == nil {
@@ -196,6 +208,10 @@ func NewTag(name string, value interface{}) *Tag {
 			}
 			ret.Append(name + "=" + strconv.Itoa(*actual))
 		case bool:
+			if omitEmpty && !actual {
+				continue
+			}
+
 			ret.Append(name + "=" + strconv.FormatBool(actual))
 		case *bool:
 			if actual == nil {
@@ -203,6 +219,10 @@ func NewTag(name string, value interface{}) *Tag {
 			}
 			ret.Append(name + "=" + strconv.FormatBool(*actual))
 		case float64:
+			if omitEmpty && actual == 0.0 {
+				continue
+			}
+
 			ret.Append(name + "=" + strconv.FormatFloat(actual, 'f', -1, 32))
 		default:
 			aText := fmt.Sprintf("%s", actual)

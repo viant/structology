@@ -17,16 +17,16 @@ type Tag struct {
 	Name string `tag:"name"` //source for output name, is case formater is not defined, use Name otherwise use Name in UpperCamel format
 	//to format output name with specified CaseFormat
 
-	CaseFormat string `tag:"caseFormat"`
+	CaseFormat string `tag:"caseFormat,omitempty"`
 
-	DateFormat string `tag:"dataFormat"`
-	TimeLayout string `tag:"timeLayout"`
-	FormatMask string `tag:"formatMask"`
+	DateFormat string `tag:"dataFormat,omitempty"`
+	TimeLayout string `tag:"timeLayout,omitempty"`
+	FormatMask string `tag:"formatMask,omitempty"`
 	//Nullable flag to output null value as opposed zero/empty value
-	Nullable  *bool `tag:"nullable"`
-	Inline    bool  `tag:"inline"`
-	Omitempty bool  `tag:"omitempty"`
-	Ignore    bool  `tag:"ignore"`
+	Nullable  *bool `tag:"nullable,omitempty"`
+	Inline    bool  `tag:"inline,omitempty"`
+	Omitempty bool  `tag:"omitempty,omitempty"`
+	Ignore    bool  `tag:"ignore,omitempty"`
 
 	//TBD
 	Precision int    `tag:"-"`
