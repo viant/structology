@@ -36,6 +36,13 @@ type Tag struct {
 	formatter *text.CaseFormatter
 }
 
+func (t *Tag) IsNullable() bool {
+	if t.Nullable == nil {
+		return false
+	}
+	return *t.Nullable
+}
+
 func (t *Tag) update(key string, value string, strictMode bool) error {
 	switch strings.ToLower(key) {
 	case "name":
