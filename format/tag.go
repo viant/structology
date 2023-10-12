@@ -2,9 +2,9 @@ package format
 
 import (
 	"fmt"
-	"github.com/viant/parsly"
 	"github.com/viant/structology/format/text"
 	ftime "github.com/viant/structology/format/time"
+	"github.com/viant/structology/tags"
 	"reflect"
 	"strings"
 )
@@ -14,24 +14,23 @@ const (
 )
 
 type Tag struct {
-	Name string //source for output name, is case formater is not defined, use Name otherwise use Name in UpperCamel format
+	Name string `tag:"name"` //source for output name, is case formater is not defined, use Name otherwise use Name in UpperCamel format
 	//to format output name with specified CaseFormat
 
-	CaseFormat string
+	CaseFormat string `tag:"caseFormat"`
 
-	DateFormat string
-	TimeLayout string
-	FormatMask string
-
-	Inline    bool
-	Omitempty bool
-	Ignore    bool
+	DateFormat string `tag:"dataFormat"`
+	TimeLayout string `tag:"timeLayout"`
+	FormatMask string `tag:"formatMask"`
+	Nullable   *bool  `tag:"nullable"`
+	Inline     bool   `tag:"inline"`
+	Omitempty  bool   `tag:"omitempty"`
+	Ignore     bool   `tag:"-"`
 
 	//TBD
-	Precision int
-	Scale     int
-
-	Language string
+	Precision int    `tag:"-"`
+	Scale     int    `tag:"-"`
+	Language  string `tag:"-"`
 
 	formatter *text.CaseFormatter
 }
@@ -55,6 +54,9 @@ func (t *Tag) update(key string, value string, strictMode bool) error {
 		t.Inline = true
 	case "omitempty":
 		t.Omitempty = true
+	case "nullable":
+		nullable := value == "true"
+		t.Nullable = &nullable
 	case "ignore", "-", "transient":
 		t.Ignore = true
 	case "lang", "language":
@@ -100,42 +102,12 @@ func Parse(tag reflect.StructTag, names ...string) (*Tag, error) {
 		case ",omitempty":
 			ret.Omitempty = true
 		}
-		cursor := parsly.NewCursor("", []byte(encoded), 0)
-		for cursor.Pos < len(cursor.Input) {
-			key, value := matchPair(cursor)
-			if err := ret.update(key, value, i == 0); err != nil {
-				return nil, err
-			}
-			if key == "" {
-				break
-			}
+		values := tags.Values(encoded)
+		if err := values.MatchPairs(func(key, value string) error {
+			return ret.update(key, value, i == 0)
+		}); err != nil {
+			return nil, err
 		}
 	}
 	return ret, nil
-}
-
-func matchPair(cursor *parsly.Cursor) (string, string) {
-	key := ""
-	value := ""
-	match := cursor.MatchAny(scopeBlockMatcher, comaTerminatorMatcher)
-	switch match.Code {
-	case scopeBlockToken:
-		value = match.Text(cursor)
-		value = value[1 : len(value)-1]
-		match = cursor.MatchAny(comaTerminatorMatcher)
-	case comaTerminatorToken:
-		value = match.Text(cursor)
-		value = value[:len(value)-1] //exclude ,
-
-	default:
-		if cursor.Pos < len(cursor.Input) {
-			value = string(cursor.Input[cursor.Pos:])
-			cursor.Pos = len(cursor.Input)
-		}
-	}
-	if index := strings.Index(value, "="); index != -1 {
-		key = value[:index]
-		value = value[index+1:]
-	}
-	return key, value
 }

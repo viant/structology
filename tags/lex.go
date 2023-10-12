@@ -1,4 +1,4 @@
-package format
+package tags
 
 import (
 	"github.com/viant/parsly"
