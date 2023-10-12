@@ -150,13 +150,29 @@ func NewTag(name string, value interface{}) *Tag {
 		}
 
 		value := aField.Value(ptr)
+
 		switch actual := value.(type) {
 		case string:
 			ret.Append(name + "=" + wrapValueIfNeeded(actual))
+		case *string:
+			if actual == nil {
+				continue
+			}
+			ret.Append(name + "=" + wrapValueIfNeeded(*actual))
 		case int:
 			ret.Append(name + "=" + strconv.Itoa(actual))
+		case *int:
+			if actual == nil {
+				continue
+			}
+			ret.Append(name + "=" + strconv.Itoa(*actual))
 		case bool:
 			ret.Append(name + "=" + strconv.FormatBool(actual))
+		case *bool:
+			if actual == nil {
+				continue
+			}
+			ret.Append(name + "=" + strconv.FormatBool(*actual))
 		case float64:
 			ret.Append(name + "=" + strconv.FormatFloat(actual, 'f', -1, 32))
 		default:
