@@ -52,11 +52,11 @@ func TestDetectCaseFormat(t *testing.T) {
 
 		{
 			names:  []string{"Authorized"},
-			expect: NewCaseFormat("t"),
+			expect: NewCaseFormat("uc"),
 		},
 	}
 
-	for i, testCase := range testCases[len(testCases)-1:] {
+	for i, testCase := range testCases {
 		actual := DetectCaseFormat(testCase.names...)
 		assert.EqualValues(t, testCase.expect, actual, fmt.Sprintf("detect (%v) ", i)+string(testCase.expect))
 	}
