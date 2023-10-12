@@ -69,6 +69,13 @@ func (t Tags) Index(name string) int {
 	return -1
 }
 
+func (t *Tags) SetIfNotFound(tag string, value string) {
+	if t.Lookup(tag) != nil {
+		return
+	}
+	*t = append(*t, &Tag{Name: tag, Values: Values(value)})
+}
+
 // Set sets tag value, if tag exists, overrides it
 func (t *Tags) Set(tag string, value string) {
 	if len(value) == 0 {
@@ -76,7 +83,7 @@ func (t *Tags) Set(tag string, value string) {
 	}
 	aTag := t.Lookup(tag)
 	if aTag == nil {
-		aTag = &Tag{}
+		aTag = &Tag{Name: tag}
 		*t = append(*t, aTag)
 	}
 	aTag.Values = Values(value)
