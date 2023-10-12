@@ -59,7 +59,7 @@ func (c *CaseFormatter) Format(src string) string {
 }
 
 func (c CaseFormat) ensureDefined() CaseFormat {
-	if c.IsDefined() {
+	if c.isDefined() {
 		return c
 	}
 	return NewCaseFormat(string(c))

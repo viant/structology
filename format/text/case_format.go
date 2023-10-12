@@ -23,6 +23,10 @@ const (
 	CaseFormatUpperDash       CaseFormat = "upperdash"
 )
 
+func (c CaseFormat) isDefined() bool {
+	return c.index() > 0
+}
+
 // IsDefined returns true if case format is defined
 func (c CaseFormat) IsDefined() bool {
 	return c.Index() > 0
@@ -61,6 +65,37 @@ func (c CaseFormat) Index() int {
 		if alternative := NewCaseFormat(string(c)); alternative != CaseFormatUndefined {
 			return alternative.Index()
 		}
+		return 0
+	}
+}
+
+func (c CaseFormat) index() int {
+	switch c {
+	case CaseFormatUndefined:
+		return 0
+	case CaseFormatUpper:
+		return 1
+	case CaseFormatLower:
+		return 2
+	case CaseFormatUpperCamel:
+		return 3
+	case CaseFormatLowerCamel:
+		return 4
+	case CaseFormatTitle:
+		return 5
+	case CaseFormatSentence:
+		return 6
+	case CaseFormatUpperUnderscore:
+		return 7
+	case CaseFormatLowerUnderscore:
+		return 8
+	case CaseFormatDash:
+		return 9
+	case CaseFormatLowerDash:
+		return 10
+	case CaseFormatUpperDash:
+		return 11
+	default:
 		return 0
 	}
 }
