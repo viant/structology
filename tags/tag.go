@@ -59,7 +59,17 @@ func (t Tags) Lookup(name string) *Tag {
 	return nil
 }
 
-// Set sets tag value
+// Index returns matched by name tag index
+func (t Tags) Index(name string) int {
+	for i, candidate := range t {
+		if candidate.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// Set sets tag value, if tag exists, overrides it
 func (t *Tags) Set(tag string, value string) {
 	if len(value) == 0 {
 		return
@@ -72,7 +82,19 @@ func (t *Tags) Set(tag string, value string) {
 	aTag.Values = Values(value)
 }
 
-// Set sets tag value
+// SetTag sets tags, if tag exists, overrides it
+func (t *Tags) SetTag(aTag *Tag) {
+	if aTag == nil {
+		return
+	}
+	if index := t.Index(aTag.Name); index != -1 {
+		(*t)[index] = aTag
+		return
+	}
+	*t = append(*t, aTag)
+}
+
+// Append appends tag values to existing tag or create a new tag
 func (t *Tags) Append(tag string, value string) {
 	if len(value) == 0 {
 		return
