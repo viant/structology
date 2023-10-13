@@ -17,8 +17,14 @@ func TestParse(t *testing.T) {
 
 		{
 			description: "fallback",
+			tagName:     "xjson",
+			tag:         reflect.StructTag(`format:"dateFormat=YYYY-MM-DD,name=startDate" xjson:"dateFormat=YYYY-MM-DD-hh:mm" `),
+		},
+
+		{
+			description: "fallback simple name ",
 			tagName:     "json",
-			tag:         reflect.StructTag(`format:"dateFormat=YYYY-MM-DD,name=startDate" json:"dateFormat=YYYY-MM-DD-hh:mm" `),
+			tag:         reflect.StructTag(`format:"dateFormat=YYYY-MM-DD,name=startDate" json:"Id,omitempty" `),
 		},
 	}
 

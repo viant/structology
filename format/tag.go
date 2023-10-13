@@ -107,9 +107,19 @@ func Parse(tag reflect.StructTag, names ...string) (*Tag, error) {
 		switch encoded {
 		case "-":
 			ret.Ignore = true
-		case ",omitempty":
-			ret.Omitempty = true
+			continue
 		}
+
+		if index := strings.Index(encoded, ",omitempty"); index != -1 && strings.HasSuffix(encoded, ",omitempty") {
+			ret.Omitempty = true
+			encoded = encoded[:index]
+		}
+
+		if !strings.Contains(encoded, ",") && !strings.Contains(encoded, "=") {
+			ret.Name = encoded
+			continue
+		}
+
 		values := tags.Values(encoded)
 		if err := values.MatchPairs(func(key, value string) error {
 			return ret.update(key, value, i == 0)
