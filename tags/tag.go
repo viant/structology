@@ -169,6 +169,9 @@ func NewTag(name string, value interface{}) *Tag {
 	ret := &Tag{Name: name}
 	for i := range xStruct.Fields {
 		aField := &xStruct.Fields[i]
+		if aField.PkgPath() != "" {
+			continue
+		}
 		omitEmpty := false
 		name := aField.Tag.Get(TagName)
 		if name == "-" {
