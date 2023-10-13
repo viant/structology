@@ -14,7 +14,7 @@ const (
 )
 
 type Tag struct {
-	Name string `tag:"name"` //source for output name, is case formater is not defined, use Name otherwise use Name in UpperCamel format
+	Name string `tag:"name,omitempty"` //source for output name, is case formater is not defined, use Name otherwise use Name in UpperCamel format
 	//to format output name with specified CaseFormat
 
 	CaseFormat string `tag:"caseFormat,omitempty"`
@@ -33,7 +33,7 @@ type Tag struct {
 	Scale     int    `tag:"-"`
 	Language  string `tag:"-"`
 
-	formatter *text.CaseFormatter
+	formatter *text.CaseFormatter `tag:"-"`
 }
 
 func (t *Tag) IsNullable() bool {
