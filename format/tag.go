@@ -58,7 +58,7 @@ func (t *Tag) update(key string, value string, strictMode bool) error {
 		t.CaseFormat = value
 	case "ignorecaseformatter":
 		t.CaseFormat = "-"
-	case "inline", "embed":
+	case "inline", "embed", "embedded":
 		t.Inline = true
 	case "omitempty":
 		t.Omitempty = true
@@ -85,7 +85,7 @@ var tagKeys = map[string]bool{
 	"format":              true,
 	"caseformat":          true,
 	"ignorecaseformatter": true,
-	"inline":              true, "embed": true,
+	"inline":              true, "embed": true, "embedded": true,
 	"omitempty": true,
 	"ignore":    true, "transient": true,
 	"lang": true, "language": true,
