@@ -228,7 +228,7 @@ func NewTag(name string, value interface{}) *Tag {
 
 			ret.Append(name + "=" + strconv.FormatFloat(actual, 'f', -1, 32))
 		default:
-			aText := fmt.Sprintf("%s", actual)
+			aText := fmt.Sprintf("%v", actual)
 			ret.Append(name + "=" + wrapValueIfNeeded(aText))
 		}
 	}
