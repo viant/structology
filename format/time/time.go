@@ -41,6 +41,13 @@ func Parse(layout, value string) (time.Time, error) {
 		if layout != "" && len(value) > len(layout) {
 			value = value[:len(layout)]
 			t, err = time.Parse(value, layout)
+			if err != nil {
+				if strings.Contains(value, "T") != strings.Contains(layout, "T") {
+					layout = strings.Replace(layout, "T", " ", 1)
+					value = strings.Replace(value, "T", " ", 1)
+				}
+				t, err = time.Parse(value, layout)
+			}
 		}
 	}
 	return t, err
