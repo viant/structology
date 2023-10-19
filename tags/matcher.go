@@ -25,6 +25,9 @@ func matchPair(cursor *parsly.Cursor) (string, string) {
 	if index := strings.Index(value, "="); index != -1 {
 		key = value[:index]
 		value = value[index+1:]
+	} else {
+		key = value
+		value = ""
 	}
 	return key, value
 }
