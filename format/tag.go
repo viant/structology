@@ -78,6 +78,7 @@ func (t *Tag) update(key string, value string, strictMode bool) error {
 }
 
 var tagKeys = map[string]bool{
+	"-":             true,
 	"name":          true,
 	"dateformat":    true,
 	"isodateformat": true,
