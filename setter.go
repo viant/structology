@@ -3,6 +3,7 @@ package structology
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/viant/structology/format"
 	"github.com/viant/xunsafe"
 	"reflect"
 	"strconv"
@@ -31,17 +32,6 @@ func WithTimeLayout(timeLayout string) SetterOption {
 	}
 }
 
-func (s *setterOptions) TimeLayout(fieldTag reflect.StructTag) string {
-	if layout, _ := fieldTag.Lookup("timeLayout"); layout != "" {
-		return layout
-	}
-	if s.timeLayout != "" {
-		return s.timeLayout
-	}
-	return time.RFC3339
-
-}
-
 func newSetterOption(opts []SetterOption) *setterOptions {
 	ret := &setterOptions{}
 	for _, opt := range opts {
@@ -52,8 +42,8 @@ func newSetterOption(opts []SetterOption) *setterOptions {
 
 func timeToString(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(time.Time)
-	options := newSetterOption(opts)
-	field.SetString(structPtr, value.Format(options.TimeLayout(field.Tag)))
+	tag := fieldTag(field)
+	field.SetString(structPtr, value.Format(tag.TimeLayout))
 	return nil
 }
 
@@ -63,8 +53,8 @@ func timePtrToString(src interface{}, field *xunsafe.Field, structPtr unsafe.Poi
 		field.SetString(structPtr, "")
 		return nil
 	}
-	options := newSetterOption(opts)
-	field.SetString(structPtr, value.Format(options.TimeLayout(field.Tag)))
+	tag := fieldTag(field)
+	field.SetString(structPtr, value.Format(tag.TimeLayout))
 	return nil
 }
 
@@ -481,18 +471,40 @@ func stringToFloat32s(src interface{}, field *xunsafe.Field, holder unsafe.Point
 func stringToTime(src interface{}, field *xunsafe.Field, holder unsafe.Pointer, opts ...SetterOption) (err error) {
 	var ret time.Time
 	srcValue := src.(string)
-	options := newSetterOption(opts)
-	if ret, err = ParseTime(options.TimeLayout(field.Tag), srcValue); err != nil {
+	if ret, err = parseTime(field, srcValue); err != nil {
 		return err
 	}
 	field.SetValue(holder, ret)
 	return nil
 }
 
+func parseTime(field *xunsafe.Field, srcValue string) (time.Time, error) {
+	var ret time.Time
+	var err error
+	tag := fieldTag(field)
+	if ret, err = tag.ParseTime(srcValue); err != nil {
+		return time.Time{}, err
+	}
+	return ret, err
+}
+
+func fieldTag(field *xunsafe.Field) *format.Tag {
+	tag, _ := format.Parse(field.Tag)
+	if tag == nil {
+		tag = &format.Tag{}
+	}
+	if tag.TimeLayout == "" {
+		tag.TimeLayout = field.Tag.Get("fieldTag")
+	}
+	if tag.TimeLayout == "" {
+		tag.TimeLayout = time.RFC3339
+	}
+	return tag
+}
+
 func stringToTimePtr(src interface{}, field *xunsafe.Field, holder unsafe.Pointer, opts ...SetterOption) error {
 	srcValue := src.(string)
-	options := newSetterOption(opts)
-	ret, err := ParseTime(options.TimeLayout(field.Tag), srcValue)
+	ret, err := parseTime(field, srcValue)
 	if err != nil {
 		return err
 	}
