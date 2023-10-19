@@ -36,18 +36,19 @@ func Parse(layout, value string) (time.Time, error) {
 	if layout == "" {
 		layout = time.RFC3339 //TODO add layout autodetection for this case
 	}
-	t, err := time.Parse(layout, value)
+	//adjust T fragment
+	if strings.Contains(value, "T") != strings.Contains(layout, "T") {
+		layout = strings.Replace(layout, "T", " ", 1)
+		value = strings.Replace(value, "T", " ", 1)
+	}
+	t, err := time.ParseInLocation(layout, value, time.UTC)
 	if err != nil {
-		if layout != "" && len(value) > len(layout) {
+		if len(value) > len(layout) {
 			value = value[:len(layout)]
-			t, err = time.Parse(value, layout)
-			if err != nil {
-				if strings.Contains(value, "T") != strings.Contains(layout, "T") {
-					layout = strings.Replace(layout, "T", " ", 1)
-					value = strings.Replace(value, "T", " ", 1)
-				}
-				t, err = time.Parse(value, layout)
-			}
+			t, err = time.Parse(layout, value)
+		} else {
+			layout = layout[:len(value)]
+			t, err = time.Parse(layout, value)
 		}
 	}
 	return t, err
