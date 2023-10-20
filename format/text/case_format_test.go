@@ -54,6 +54,10 @@ func TestDetectCaseFormat(t *testing.T) {
 			names:  []string{"Authorized"},
 			expect: NewCaseFormat("uc"),
 		},
+		{
+			names:  []string{"peer39_custom_cdvanced"},
+			expect: NewCaseFormat("lu"),
+		},
 	}
 
 	for i, testCase := range testCases {

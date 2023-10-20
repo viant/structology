@@ -136,6 +136,9 @@ outer:
 				wasUpper = &isUpper
 				continue
 			}
+			if unicode.IsNumber(r) {
+				continue
+			}
 			sep = string(r)
 			if sep != " " || separators > 1 {
 				break outer
@@ -220,6 +223,9 @@ func (c CaseFormat) nextWord(offset int, src string) (int, string) {
 	wasSpecial := false
 	var wasUpper *bool
 	for i, r := range src[offset:] {
+		if unicode.IsNumber(r) {
+			continue
+		}
 		if unicode.IsLetter(r) {
 			if wasSpecial {
 				ret = i

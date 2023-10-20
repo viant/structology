@@ -15,6 +15,14 @@ func TestValues_MatchPairs(t *testing.T) {
 		{
 
 			description: "mixed",
+			input:       "name=abc",
+			expect: map[string]string{
+				"name": "abc",
+			},
+		},
+		{
+
+			description: "mixed",
 			input:       ",omitempty,path=@exclude-ids",
 			expect: map[string]string{
 				"omitempty": "",

@@ -63,6 +63,13 @@ func TestCase_Format(t *testing.T) {
 			to:          NewCaseFormat("lc"),
 			expect:      "vendor",
 		},
+		{
+			description: "number",
+			input:       "Peer39CustomAdvanced",
+			from:        CaseFormatUpperUnderscore,
+			to:          NewCaseFormat("lc"),
+			expect:      "peer39CustomAdvanced",
+		},
 	}
 
 	for _, useCase := range useCases {
