@@ -39,6 +39,9 @@ func matchElement(cursor *parsly.Cursor) string {
 	case scopeBlockToken:
 		value = match.Text(cursor)
 		match = cursor.MatchAny(comaTerminatorMatcher)
+	case quotedToken:
+		value = match.Text(cursor)
+		match = cursor.MatchAny(comaTerminatorMatcher)
 	case comaTerminatorToken:
 		value = match.Text(cursor)
 		value = value[:len(value)-1] //exclude ,

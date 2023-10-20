@@ -8,9 +8,13 @@ import (
 const (
 	comaTerminatorToken = iota
 	scopeBlockToken
+
+	quotedToken
 )
 
 var (
 	comaTerminatorMatcher = parsly.NewToken(comaTerminatorToken, "coma", matcher.NewTerminator(',', true))
 	scopeBlockMatcher     = parsly.NewToken(scopeBlockToken, "{ .... }", matcher.NewBlock('{', '}', '\\'))
+
+	quotedMatcher = parsly.NewToken(quotedToken, "' .... '", matcher.NewQuote('\'', '\\'))
 )
