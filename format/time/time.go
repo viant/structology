@@ -51,12 +51,12 @@ var rfc3339TimeLayoutToIso20220715DateFormatReplacer = strings.NewReplacer(
 
 // DateFormatToTimeLayout converts ISO 2022-07-15 date format to RFC3339 time layout
 func DateFormatToTimeLayout(dateFormat string) string {
-	return rfc3339TimeLayoutToIso20220715DateFormatReplacer.Replace(dateFormat)
+	return iso20220715DateFormatToRfc3339TimeLayoutReplacer.Replace(dateFormat)
 }
 
 // TimeLayoutToDateFormat converts RFC3339 time layout to ISO 2022-07-15 date format
 func TimeLayoutToDateFormat(dateFormat string) string {
-	return iso20220715DateFormatToRfc3339TimeLayoutReplacer.Replace(dateFormat)
+	return rfc3339TimeLayoutToIso20220715DateFormatReplacer.Replace(dateFormat)
 }
 
 func Parse(layout, value string) (time.Time, error) {
