@@ -5,7 +5,7 @@ import "github.com/viant/parsly"
 // Values represents tag values
 type Values string
 
-// MatchPairs match paris separated by ,
+// MatchPairs matches paris separated by ,
 func (v Values) MatchPairs(onMatch func(key, value string) error) error {
 	cursor := parsly.NewCursor("", []byte(v), 0)
 	for cursor.Pos < len(cursor.Input) {
@@ -14,6 +14,21 @@ func (v Values) MatchPairs(onMatch func(key, value string) error) error {
 			continue
 		}
 		if err := onMatch(key, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Match matches elements separated by ,
+func (v Values) Match(onMatch func(value string) error) error {
+	cursor := parsly.NewCursor("", []byte(v), 0)
+	for cursor.Pos < len(cursor.Input) {
+		value := matchElement(cursor)
+		if value == "" {
+			continue
+		}
+		if err := onMatch(value); err != nil {
 			return err
 		}
 	}
