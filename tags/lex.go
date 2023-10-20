@@ -6,13 +6,15 @@ import (
 )
 
 const (
-	comaTerminatorToken = iota
+	whitespaceToken = iota
+	comaTerminatorToken
 	scopeBlockToken
 
 	quotedToken
 )
 
 var (
+	whitespaceMatcher     = parsly.NewToken(whitespaceToken, " ", matcher.NewWhiteSpace())
 	comaTerminatorMatcher = parsly.NewToken(comaTerminatorToken, "coma", matcher.NewTerminator(',', true))
 	scopeBlockMatcher     = parsly.NewToken(scopeBlockToken, "{ .... }", matcher.NewBlock('{', '}', '\\'))
 
