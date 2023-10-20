@@ -27,8 +27,35 @@ var iso20220715DateFormatToRfc3339TimeLayoutReplacer = strings.NewReplacer(
 	"Z", "Z07:00",
 )
 
+var rfc3339TimeLayoutToIso20220715DateFormatReplacer = strings.NewReplacer(
+	"2006", "YYYY",
+	"Z07:00", "+hh:mm",
+	"Z0700", "+hhmm",
+	"Z07", "+hh",
+	"Z07:00", "-hh:mm",
+	"Z0700", "-hhmm",
+	"15", "hh",
+	"04", "mm",
+	"4", "m",
+	"05", "ss",
+	".999", ".SSS",
+	".99", ".SS",
+	".9", ".S",
+	"Z07", "-hh",
+	"Z07:00", "Z",
+	"01", "MM",
+	"1", "M",
+	"02", "DD",
+	"2", "D",
+)
+
 // DateFormatToTimeLayout converts ISO 2022-07-15 date format to RFC3339 time layout
 func DateFormatToTimeLayout(dateFormat string) string {
+	return iso20220715DateFormatToRfc3339TimeLayoutReplacer.Replace(dateFormat)
+}
+
+// TimeLayoutToDateFormat converts RFC3339 time layout to ISO 2022-07-15 date format
+func TimeLayoutToDateFormat(dateFormat string) string {
 	return iso20220715DateFormatToRfc3339TimeLayoutReplacer.Replace(dateFormat)
 }
 
