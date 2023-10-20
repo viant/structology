@@ -34,7 +34,7 @@ func matchPair(cursor *parsly.Cursor) (string, string) {
 
 func matchElement(cursor *parsly.Cursor) string {
 	value := ""
-	match := cursor.MatchAny(scopeBlockMatcher, comaTerminatorMatcher)
+	match := cursor.MatchAny(scopeBlockMatcher, quotedMatcher, comaTerminatorMatcher)
 	switch match.Code {
 	case scopeBlockToken:
 		value = match.Text(cursor)
