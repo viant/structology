@@ -1,6 +1,9 @@
 package tags
 
-import "github.com/viant/parsly"
+import (
+	"github.com/viant/parsly"
+	"strings"
+)
 
 // Values represents tag values
 type Values string
@@ -33,4 +36,17 @@ func (v Values) Match(onMatch func(value string) error) error {
 		}
 	}
 	return nil
+}
+
+func (v Values) Name() (Values, string) {
+	text := string(v)
+	index := strings.Index(text, ",")
+	if index == -1 {
+		return "", text
+	}
+	name := text[:index]
+	if eqIndex := strings.Index(name, "="); eqIndex != -1 {
+		return v, ""
+	}
+	return Values(text[index+1:]), name
 }
