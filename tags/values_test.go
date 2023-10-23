@@ -29,6 +29,17 @@ func TestValues_MatchPairs(t *testing.T) {
 				"path":      "@exclude-ids",
 			},
 		},
+		{
+
+			description: "quoted",
+			input:       ",omitempty,path=@exclude-ids,z={1,2,3},v=true",
+			expect: map[string]string{
+				"omitempty": "",
+				"path":      "@exclude-ids",
+				"z":         "{1,2,3}",
+				"v":         "true",
+			},
+		},
 	}
 	for _, testCase := range testCases {
 		values := Values(testCase.input)

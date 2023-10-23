@@ -9,6 +9,7 @@ const (
 	whitespaceToken = iota
 	comaTerminatorToken
 	scopeBlockToken
+	eqTerminatorToken
 
 	quotedToken
 )
@@ -16,7 +17,9 @@ const (
 var (
 	whitespaceMatcher     = parsly.NewToken(whitespaceToken, " ", matcher.NewWhiteSpace())
 	comaTerminatorMatcher = parsly.NewToken(comaTerminatorToken, "coma", matcher.NewTerminator(',', true))
-	scopeBlockMatcher     = parsly.NewToken(scopeBlockToken, "{ .... }", matcher.NewBlock('{', '}', '\\'))
+	eqTerminatorMatcher   = parsly.NewToken(eqTerminatorToken, "eq", matcher.NewTerminator('=', true))
+
+	scopeBlockMatcher = parsly.NewToken(scopeBlockToken, "{ .... }", matcher.NewBlock('{', '}', '\\'))
 
 	quotedMatcher = parsly.NewToken(quotedToken, "' .... '", matcher.NewQuote('\'', '\\'))
 )
