@@ -38,15 +38,15 @@ func (v Values) Match(onMatch func(value string) error) error {
 	return nil
 }
 
-func (v Values) Name() (Values, string) {
+func (v Values) Name() (string, Values) {
 	text := string(v)
 	index := strings.Index(text, ",")
 	if index == -1 {
-		return "", text
+		return text, ""
 	}
 	name := text[:index]
 	if eqIndex := strings.Index(name, "="); eqIndex != -1 {
-		return v, ""
+		return "", v
 	}
-	return Values(text[index+1:]), name
+	return name, Values(text[index+1:])
 }
