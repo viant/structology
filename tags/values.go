@@ -38,6 +38,7 @@ func (v Values) Match(onMatch func(value string) error) error {
 	return nil
 }
 
+// Name returns tag value and remaining values
 func (v Values) Name() (string, Values) {
 	text := string(v)
 	index := strings.Index(text, ",")
