@@ -10,10 +10,33 @@ import (
 )
 
 func (t *Tag) FormatTime(ts *time.Time) string {
+
+	ts = t.adjustTimezone(ts)
+
 	if t.TimeLayout == "" {
 		return ts.Format(time.RFC3339)
 	}
 	return ts.Format(t.TimeLayout)
+}
+
+func (t *Tag) adjustTimezone(ts *time.Time) *time.Time {
+	if t.Timezone == "" {
+		return ts
+	}
+	switch t.Timezone {
+	case "utc", "UTC":
+		inZone := ts.In(time.UTC)
+		ts = &inZone
+	default:
+		if t.tz == nil {
+			t.tz, _ = time.LoadLocation(t.Timezone)
+		}
+		if tz := t.tz; tz != nil {
+			inZone := ts.In(tz)
+			ts = &inZone
+		}
+	}
+	return ts
 }
 
 func (t *Tag) FormatName() string {

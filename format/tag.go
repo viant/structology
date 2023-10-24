@@ -7,6 +7,7 @@ import (
 	"github.com/viant/structology/tags"
 	"reflect"
 	"strings"
+	"time"
 )
 
 const (
@@ -21,6 +22,9 @@ type Tag struct {
 
 	DateFormat string `tag:"dataFormat,omitempty"`
 	TimeLayout string `tag:"timeLayout,omitempty"`
+	Timezone   string `tag:"timezone,omitempty"`
+	tz         *time.Location
+
 	FormatMask string `tag:"formatMask,omitempty"`
 	//Nullable flag to output null value as opposed zero/empty value
 	Nullable  *bool `tag:"nullable,omitempty"`
@@ -52,6 +56,16 @@ func (t *Tag) update(key string, value string, strictMode bool) error {
 		t.TimeLayout = ftime.DateFormatToTimeLayout(value)
 	case "timelayout", "datelayout", "rfc3339":
 		t.TimeLayout = value
+	case "tz", "timezone":
+		switch value {
+		case "UTC", "utc":
+		default:
+			var err error
+			if t.tz, err = time.LoadLocation(value); err != nil {
+				return fmt.Errorf("invalid timezone: %s, %w", value, err)
+			}
+		}
+		t.Timezone = value
 	case "format":
 		t.FormatMask = value
 	case "caseformat":
