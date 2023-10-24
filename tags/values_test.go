@@ -40,6 +40,15 @@ func TestValues_MatchPairs(t *testing.T) {
 				"v":         "true",
 			},
 		},
+		{
+
+			description: "name with options",
+			input:       "kind=query,in=qp1",
+			expect: map[string]string{
+				"kind": "query",
+				"in":   "qp1",
+			},
+		},
 	}
 	for _, testCase := range testCases {
 		values := Values(testCase.input)

@@ -41,13 +41,15 @@ func (v Values) Match(onMatch func(value string) error) error {
 // Name returns tag value and remaining values
 func (v Values) Name() (string, Values) {
 	text := string(v)
-	index := strings.Index(text, ",")
-	if index == -1 {
+	comaIndex := strings.Index(text, ",")
+	eqIndex := strings.Index(text, "=")
+	if comaIndex == -1 && eqIndex == -1 {
 		return text, ""
 	}
-	name := text[:index]
-	if eqIndex := strings.Index(name, "="); eqIndex != -1 {
+	name := text[:comaIndex]
+	eqIndex = strings.Index(text, "=")
+	if eqIndex != -1 {
 		return "", v
 	}
-	return name, Values(text[index+1:])
+	return name, Values(text[comaIndex+1:])
 }
