@@ -43,8 +43,11 @@ func (v Values) Name() (string, Values) {
 	text := string(v)
 	comaIndex := strings.Index(text, ",")
 	eqIndex := strings.Index(text, "=")
-	if comaIndex == -1 && eqIndex == -1 {
-		return text, ""
+	if comaIndex == -1 {
+		if eqIndex == -1 {
+			return text, ""
+		}
+		return "", v
 	}
 	name := text[:comaIndex]
 	eqIndex = strings.Index(text, "=")
