@@ -61,3 +61,40 @@ func TestValues_MatchPairs(t *testing.T) {
 		assert.EqualValues(t, testCase.expect, actual, testCase.description)
 	}
 }
+
+func TestValues_Name(t *testing.T) {
+	var testCases = []struct {
+		description  string
+		input        Values
+		expectName   string
+		expectValues Values
+	}{
+
+		{
+
+			description:  "pairs",
+			input:        "p1=1,group=1",
+			expectValues: "p1=1,group=1",
+			expectName:   "",
+		},
+		{
+
+			description:  "mixed",
+			input:        "p1,group=1",
+			expectValues: "group=1",
+			expectName:   "p1",
+		},
+		{
+
+			description:  "mixed 2",
+			input:        "p1,arg1",
+			expectValues: "arg1",
+			expectName:   "p1",
+		},
+	}
+	for _, testCase := range testCases {
+		actual, values := testCase.input.Name()
+		assert.EqualValues(t, testCase.expectValues, values, testCase.description)
+		assert.EqualValues(t, testCase.expectName, actual, testCase.description)
+	}
+}

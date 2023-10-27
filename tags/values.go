@@ -48,6 +48,12 @@ func (v Values) Name() (string, Values) {
 			return text, ""
 		}
 		return "", v
+	} else {
+		if eqIndex != -1 && eqIndex > comaIndex {
+			name := text[:comaIndex]
+			values := text[comaIndex+1:]
+			return name, Values(values)
+		}
 	}
 	name := text[:comaIndex]
 	eqIndex = strings.Index(text, "=")
