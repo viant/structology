@@ -241,6 +241,21 @@ func (s *State) Selector(aPath string) (*Selector, error) {
 	return s.stateType.selectors.Items[index], nil
 }
 
+// MergeFrom merge stage with from state
+func (s *State) MergeFrom(from *State) error {
+	sType := s.Type()
+	for _, aSel := range sType.selectors.Root {
+		value, err := from.Value(aSel.Name())
+		if err != nil {
+			return err
+		}
+		if err = aSel.Set(s.ptr, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // NewStateType creates a state type
 func NewStateType(rType reflect.Type, opts ...SelectorOption) *StateType {
 	ret := &StateType{rType: rType, isPtr: rType.Kind() == reflect.Ptr}
