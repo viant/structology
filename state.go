@@ -266,7 +266,15 @@ func NewStateType(rType reflect.Type, opts ...SelectorOption) *StateType {
 // WithValue creates a state with value
 func (t *StateType) WithValue(value interface{}) *State {
 	//TODO assignable assertion
-	return &State{stateType: t, value: value, ptr: xunsafe.AsPointer(value)}
+	sType := reflect.TypeOf(value)
+	isPtr := sType.Kind() == reflect.Ptr
+	ret := &State{stateType: t, value: value, ptr: xunsafe.AsPointer(value)}
+	if isPtr {
+		ret.valuePtr = value
+	} else {
+		ret.valuePtr = reflect.NewAt(sType, ret.ptr).Interface()
+	}
+	return ret
 }
 
 // NewState creates a state
