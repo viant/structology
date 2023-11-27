@@ -3,7 +3,7 @@ package structology
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/viant/structology/format"
+	"github.com/viant/tagly/format"
 	"github.com/viant/xunsafe"
 	"reflect"
 	"strconv"
@@ -494,7 +494,7 @@ func fieldTag(field *xunsafe.Field) *format.Tag {
 		tag = &format.Tag{}
 	}
 	if tag.TimeLayout == "" {
-		tag.TimeLayout = field.Tag.Get("fieldTag")
+		tag.TimeLayout = field.Tag.Get("timeLayout")
 	}
 	if tag.TimeLayout == "" {
 		tag.TimeLayout = time.RFC3339

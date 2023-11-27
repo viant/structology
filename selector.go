@@ -351,6 +351,9 @@ func newSelectors(owner reflect.Type, ancestors paths, options *selectorOptions)
 			}
 		}
 		if structType := ensureStruct(field.Type); structType != nil && !isTimeType(structType) && owner != structType {
+			if structType == ensureStruct(owner) {
+				continue
+			}
 			selector.Selectors, _ = newSelectors(field.Type, selector.paths, options)
 		}
 		for _, key := range options.getNames(field.Name, field.Tag) {

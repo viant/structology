@@ -128,27 +128,6 @@ func TestNewSelector(t *testing.T) {
 		},
 
 		{
-			description: "double nested ptr selector",
-			new: func() interface{} {
-				type Foo struct {
-					Id   int
-					Name string
-				}
-				type Bar struct {
-					Id  int
-					Foo *Foo
-				}
-				type Dummy struct {
-					Dummy *Dummy
-					Bar   *Bar
-				}
-				return &Dummy{Bar: &Bar{Id: 20, Foo: &Foo{Id: 1, Name: "text"}}}
-			},
-			prev:     "text",
-			selector: "Bar.Foo.Name",
-			value:    "abc",
-		},
-		{
 			description: "nested ptr selector",
 			new: func() interface{} {
 				type Foo struct {
@@ -207,6 +186,27 @@ func TestNewSelector(t *testing.T) {
 			prev:     []interface{}{1, 2, 3},
 			selector: "Any",
 			value:    []interface{}{"a", "b"},
+		},
+		{
+			description: "double nested ptr selector",
+			new: func() interface{} {
+				type Foo struct {
+					Id   int
+					Name string
+				}
+				type Bar struct {
+					Id  int
+					Foo *Foo
+				}
+				type Dummy struct {
+					Dummy *Dummy
+					Bar   *Bar
+				}
+				return &Dummy{Bar: &Bar{Id: 20, Foo: &Foo{Id: 1, Name: "text"}}}
+			},
+			prev:     "text",
+			selector: "Bar.Foo.Name",
+			value:    "abc",
 		},
 	}
 
