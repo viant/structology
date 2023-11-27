@@ -114,6 +114,11 @@ func (s *State) Sync() {
 	}
 }
 
+// SyncPointer syncs value ptr to value
+func (s *State) SyncPointer() {
+	s.valuePtr = reflect.NewAt(s.stateType.rType, s.ptr).Interface()
+}
+
 // StatePtr return state value
 func (s *State) StatePtr() interface{} {
 	return s.valuePtr
