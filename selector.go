@@ -230,7 +230,7 @@ func (s *Selector) SetValue(ptr unsafe.Pointer, value interface{}, opts ...PathO
 		aPath.field.SetValue(holderPtr, value)
 		return nil
 	}
-	conv = &converter{inputType: srcType, setter: lookupSetter(srcType, aPath.field.Type)}
+	conv = &converter{inputType: srcType, setter: LookupSetter(srcType, aPath.field.Type)}
 	aPath.converter = conv
 	return conv.setter(value, aPath.field, holderPtr)
 }
@@ -253,7 +253,7 @@ func (s *Selector) Set(ptr unsafe.Pointer, value interface{}, opts ...PathOption
 		aPath.field.Set(holderPtr, value)
 		return nil
 	}
-	conv = &converter{inputType: srcType, setter: lookupSetter(srcType, aPath.field.Type)}
+	conv = &converter{inputType: srcType, setter: LookupSetter(srcType, aPath.field.Type)}
 	aPath.converter = conv
 	return conv.setter(value, aPath.field, holderPtr)
 }

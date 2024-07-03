@@ -15,9 +15,9 @@ import (
 type (
 	converter struct {
 		inputType reflect.Type
-		setter    setter
+		setter    Setter
 	}
-	setter func(src interface{}, field *xunsafe.Field, holder unsafe.Pointer, opts ...SetterOption) error
+	Setter func(src interface{}, field *xunsafe.Field, holder unsafe.Pointer, opts ...SetterOption) error
 
 	setterOptions struct {
 		timeLayout string
@@ -266,8 +266,8 @@ func anyToInterface(src interface{}, field *xunsafe.Field, structPtr unsafe.Poin
 	return nil
 }
 
-// TODO add conversion []interface to specific primitive slcies
-func lookupSetter(src reflect.Type, dest reflect.Type) setter {
+// LookupSetter  TODO add conversion []interface to specific primitive slcies
+func LookupSetter(src reflect.Type, dest reflect.Type) Setter {
 	switch dest.Kind() {
 	case reflect.Interface:
 		return anyToInterface
