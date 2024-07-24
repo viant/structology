@@ -35,7 +35,7 @@ func (p *Marker) IsFieldSet(ptr unsafe.Pointer, name string) bool {
 
 // Index returns mapped field index or -1
 func (p *Marker) Index(name string) int {
-	if len(p.index) == 0 {
+	if p == nil || len(p.index) == 0 {
 		return -1
 	}
 	pos, ok := p.index[name]
@@ -82,7 +82,7 @@ func (p *Marker) Set(ptr unsafe.Pointer, index int, flag bool) error {
 
 // IsSet returns true if field has been set
 func (p *Marker) IsSet(ptr unsafe.Pointer, index int) bool {
-	if p.holder == nil || p.holder.IsNil(ptr) {
+	if p == nil || p.holder == nil || p.holder.IsNil(ptr) {
 		return true //we do not have field presence provider so we assume all fields are set
 	}
 	if p.holder.IsNil(ptr) {
