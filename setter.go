@@ -398,6 +398,14 @@ func LookupSetter(src reflect.Type, dest reflect.Type) Setter {
 		}
 	case reflect.Ptr:
 		if isTimeType(dest) {
+			if dest.Elem().Kind() == reflect.Ptr {
+				switch src.Kind() {
+				case reflect.String:
+					return stringToTimeDoublePtr
+				case reflect.Int:
+					return intToTimeDoublePtr
+				}
+			}
 			switch src.Kind() {
 			case reflect.String:
 				return stringToTimePtr
@@ -537,11 +545,31 @@ func stringToTimePtr(src interface{}, field *xunsafe.Field, holder unsafe.Pointe
 	return nil
 }
 
+func stringToTimeDoublePtr(src interface{}, field *xunsafe.Field, holder unsafe.Pointer, opts ...SetterOption) error {
+	srcValue := src.(string)
+	ret, err := parseTime(field, srcValue)
+	if err != nil {
+		return err
+	}
+	retPtr := &ret
+	field.SetValue(holder, &retPtr)
+	return nil
+}
+
 func intToTimePtr(src interface{}, field *xunsafe.Field, holder unsafe.Pointer, opts ...SetterOption) (err error) {
 	var ret time.Time
 	srcValue := src.(int)
 	ret = time.Unix(int64(srcValue), 0)
 	field.SetValue(holder, &ret)
+	return nil
+}
+
+func intToTimeDoublePtr(src interface{}, field *xunsafe.Field, holder unsafe.Pointer, opts ...SetterOption) (err error) {
+	var ret time.Time
+	srcValue := src.(int)
+	ret = time.Unix(int64(srcValue), 0)
+	retPtr := &ret
+	field.SetValue(holder, &retPtr)
 	return nil
 }
 
