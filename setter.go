@@ -161,6 +161,17 @@ func boolToBool(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer,
 	return nil
 }
 
+func stringToBools(src interface{}, field *xunsafe.Field, holder unsafe.Pointer, opts ...SetterOption) error {
+	value := src.(string)
+	r := newRepeated(value, true)
+	n, err := r.AsBools()
+	if err != nil {
+		return err
+	}
+	field.SetValue(holder, n)
+	return nil
+}
+
 func float64ToFloat64(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(float64)
 	field.SetFloat64(structPtr, value)
@@ -371,6 +382,8 @@ func LookupSetter(src reflect.Type, dest reflect.Type) Setter {
 				return stringToFloat32s
 			case reflect.Float64:
 				return stringToFloat64s
+			case reflect.Bool:
+				return stringToBools
 			}
 		}
 	case reflect.Struct:
@@ -561,6 +574,18 @@ func (r repeated) AsInts() ([]int, error) {
 	return result, nil
 }
 
+func (r repeated) AsBools() ([]bool, error) {
+	var result = make([]bool, 0, len(r))
+	for _, item := range r {
+		v, err := strconv.ParseBool(item)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert %v into %T, %w", r, result, err)
+		}
+		result = append(result, v)
+	}
+	return result, nil
+}
+
 func (r repeated) AsUInts() ([]uint, error) {
 	v, err := r.AsInts()
 	if err != nil {
@@ -609,7 +634,7 @@ func (r repeated) AsFloats32() ([]float32, error) {
 	return result, nil
 }
 
-func newRepeated(text string, isNumeric bool) repeated {
+func newRepeated(text string, trimItem bool) repeated {
 	if text == "" {
 		return repeated{}
 	}
@@ -617,12 +642,12 @@ func newRepeated(text string, isNumeric bool) repeated {
 		text = text[1 : len(text)-1]
 	}
 	elements := strings.Split(text, ",")
-	if !isNumeric {
+	if !trimItem {
 		return elements
 	}
 	var result = make(repeated, 0, len(elements))
 	for _, elem := range elements {
-		if isNumeric {
+		if trimItem {
 			if elem = strings.TrimSpace(elem); elem == "" {
 				continue
 			}
