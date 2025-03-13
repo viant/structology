@@ -10,27 +10,27 @@ var timeType = reflect.TypeOf(time.Time{})
 var timePtrType = reflect.PtrTo(timeType)
 
 func isTimeType(candidate reflect.Type) bool {
-	return ensureStruct(candidate) == timeType
+	return EnsureStructType(candidate) == timeType
 }
 
-func ensureStruct(t reflect.Type) reflect.Type {
+func EnsureStructType(t reflect.Type) reflect.Type {
 	switch t.Kind() {
 	case reflect.Struct:
 		return t
 	case reflect.Ptr:
-		return ensureStruct(t.Elem())
+		return EnsureStructType(t.Elem())
 	case reflect.Slice:
-		return ensureStruct(t.Elem())
+		return EnsureStructType(t.Elem())
 	}
 	return nil
 }
 
-func ensureSlice(t reflect.Type) reflect.Type {
+func EnsureSliceType(t reflect.Type) reflect.Type {
 	switch t.Kind() {
 	case reflect.Slice:
 		return t
 	case reflect.Ptr:
-		return ensureSlice(t.Elem())
+		return EnsureSliceType(t.Elem())
 	case reflect.Struct:
 		return nil
 	}

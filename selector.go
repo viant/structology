@@ -333,7 +333,7 @@ func NewSelectors(owner reflect.Type, opts ...SelectorOption) (Selectors, *Marke
 }
 
 func newSelectors(owner reflect.Type, ancestors paths, options *selectorOptions) (Selectors, *Marker) {
-	aStruct := ensureStruct(owner)
+	aStruct := EnsureStructType(owner)
 	xStruct := xunsafe.NewStruct(aStruct)
 	var marker *Marker
 	if HasSetMarker(aStruct) {
@@ -344,14 +344,14 @@ func newSelectors(owner reflect.Type, ancestors paths, options *selectorOptions)
 
 		fieldPath := &path{field: &xStruct.Fields[i], kind: field.Kind(), isPtr: field.Kind() == reflect.Ptr, marker: marker}
 		selector := &Selector{paths: append(ancestors, fieldPath)}
-		if sliceType := ensureSlice(field.Type); sliceType != nil {
+		if sliceType := EnsureSliceType(field.Type); sliceType != nil {
 			fieldPath.slice = xunsafe.NewSlice(sliceType)
 			if sliceType.Elem().Kind() == reflect.Ptr {
 				fieldPath.isPtr = true
 			}
 		}
-		if structType := ensureStruct(field.Type); structType != nil && !isTimeType(structType) && owner != structType {
-			if structType == ensureStruct(owner) {
+		if structType := EnsureStructType(field.Type); structType != nil && !isTimeType(structType) && owner != structType {
+			if structType == EnsureStructType(owner) {
 				continue
 			}
 			selector.Selectors, _ = newSelectors(field.Type, selector.paths, options)

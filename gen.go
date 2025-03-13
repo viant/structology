@@ -2,10 +2,10 @@ package structology
 
 import "reflect"
 
-//GenMarkerFields generate marker struct fields
+// GenMarkerFields generate marker struct fields
 func GenMarkerFields(t reflect.Type) []reflect.StructField {
 	var result []reflect.StructField
-	if t = ensureStruct(t); t == nil {
+	if t = EnsureStructType(t); t == nil {
 		return result
 	}
 	boolType := reflect.TypeOf(true)

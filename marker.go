@@ -128,7 +128,7 @@ func (p *Marker) init() error {
 	}
 	if holder := p.holder; holder != nil {
 		p.fields = make([]*xunsafe.Field, len(p.index))
-		holderType := ensureStruct(holder.Type)
+		holderType := EnsureStructType(holder.Type)
 		for i := 0; i < holderType.NumField(); i++ {
 			markerField := holderType.Field(i)
 			pos, ok := p.index[markerField.Name]
@@ -146,7 +146,7 @@ func (p *Marker) init() error {
 
 // NewMarker returns new struct field set marker
 func NewMarker(t reflect.Type, opts ...Option) (*Marker, error) {
-	if t = ensureStruct(t); t == nil {
+	if t = EnsureStructType(t); t == nil {
 		return nil, fmt.Errorf("supplied type is not struct")
 	}
 	numFiled := t.NumField()
@@ -167,7 +167,7 @@ func NewMarker(t reflect.Type, opts ...Option) (*Marker, error) {
 
 // HasSetMarker returns true if struct has set marker
 func HasSetMarker(t reflect.Type) bool {
-	t = ensureStruct(t)
+	t = EnsureStructType(t)
 	if t == nil {
 		return false
 	}
