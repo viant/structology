@@ -36,3 +36,8 @@ func EnsureSliceType(t reflect.Type) reflect.Type {
 	}
 	return nil
 }
+
+// StructTypeOf returns struct type of given value
+func StructTypeOf(v interface{}) reflect.Type {
+	return EnsureStructType(reflect.TypeOf(v))
+}
