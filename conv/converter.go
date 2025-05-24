@@ -80,6 +80,9 @@ func (c *Converter) Convert(src interface{}, dest interface{}) error {
 	if destValue.Kind() != reflect.Ptr {
 		return errors.New("destination must be a pointer")
 	}
+	if destValue.Elem().Kind() == reflect.Ptr {
+		destValue = destValue.Elem()
+	}
 
 	if destValue.IsNil() {
 		return errors.New("destination pointer cannot be nil")
@@ -753,7 +756,6 @@ func (c *Converter) convertToStruct(destValue, srcValue reflect.Value) error {
 	return nil
 }
 
-// Helper function to set a struct field with proper error handling
 func setStructField(c *Converter, fieldValue reflect.Value, value interface{}, fieldName string, structFieldName string, opts Options) bool {
 	if !fieldValue.CanSet() {
 		if opts.AccessUnexported {
@@ -767,6 +769,29 @@ func setStructField(c *Converter, fieldValue reflect.Value, value interface{}, f
 			}
 		}
 		return false
+	}
+
+	// Handle nil pointer case for struct pointers
+	if value == nil && fieldValue.Kind() == reflect.Ptr {
+		// If the field is a pointer and the value is nil, set it to nil
+		fieldValue.Set(reflect.Zero(fieldValue.Type()))
+		return true
+	}
+
+	// Special handling for nested structs when field is a pointer to struct
+	if fieldValue.Kind() == reflect.Ptr && fieldValue.Type().Elem().Kind() == reflect.Struct {
+		// Check if value is a map that can be converted to the struct type
+		if valueMap, ok := value.(map[string]interface{}); ok {
+			// Create a new instance of the struct
+			newStructPtr := reflect.New(fieldValue.Type().Elem())
+
+			// Convert the map to the struct
+			if err := c.Convert(valueMap, newStructPtr.Interface()); err == nil {
+				// Set the pointer to the new struct
+				fieldValue.Set(newStructPtr)
+				return true
+			}
+		}
 	}
 
 	fieldPtr := reflect.New(fieldValue.Type())

@@ -1,6 +1,8 @@
 package conv
 
 import (
+	"encoding/json"
+	"fmt"
 	"github.com/stretchr/testify/assert"
 	"reflect"
 	"testing"
@@ -18,6 +20,17 @@ type SimpleStruct struct {
 	IgnoreField string `json:"-"`
 	Renamed     string `json:"custom_name"`
 	unexported  string
+}
+
+type StructB struct {
+	A []string
+	B []string
+	Z int
+}
+
+type StructA struct {
+	Int     int
+	StructB *StructB
 }
 
 type Basic struct {
@@ -385,52 +398,106 @@ func TestConvertMapToStruct(t *testing.T) {
 	if caseResult.Age != 0 {
 		t.Errorf("Case sensitive - Age: expected 0, got %d", caseResult.Age)
 	}
+
 }
-
 func TestConvertNestedStructs(t *testing.T) {
-	converter := NewConverter(DefaultOptions())
 
-	// Source map with nested data
-	srcMap := map[string]interface{}{
-		"name":    "John Doe",
-		"age":     30,
-		"active":  true,
-		"address": "123 Main St",
-		"details": map[string]interface{}{
-			"country": "USA",
-			"zip":     "12345",
+	type testCase struct {
+		name         string
+		input        map[string]interface{}
+		outputType   reflect.Type
+		expectedJSON string
+	}
+
+	tests := []testCase{
+		{
+			name: "basic nested structure",
+			input: map[string]interface{}{
+				"name":    "John Doe",
+				"age":     30,
+				"active":  true,
+				"address": "123 Main St",
+				"details": map[string]interface{}{
+					"country": "USA",
+					"zip":     "12345",
+				},
+			},
+			outputType: reflect.TypeOf(nestedStruct{}),
+			expectedJSON: `{
+  "Name" : "John Doe",
+  "Age" : 30,
+  "Active" : true,
+  "Score" : 0,
+  "DateJoined" : "0001-01-01T00:00:00Z",
+  "Tags" : null,
+  "Collection" : null,
+  "custom_name" : "",
+  "Address" : "123 Main St",
+  "Details" : {
+    "country" : "USA",
+    "zip" : "12345"
+  }
+}`,
 		},
+		{
+			name: "basic nested structure",
+			input: map[string]interface{}{
+				"int": 3,
+				"structB": map[string]interface{}{
+					"A": []interface{}{"a", "b"},
+					"B": []interface{}{"c", "d"},
+					"Z": 5,
+				},
+			},
+			outputType: reflect.TypeOf(StructA{}),
+			expectedJSON: `{
+  "Int" : 3,
+  "StructB" : {
+	"A" : [
+	  "a",
+	  "b"
+	],
+	"B" : [
+	  "c",
+	  "d"
+	],
+	"Z" : 5
+}}`,
+		},
+		// Add more test cases as needed
 	}
 
-	var result nestedStruct
-	err := converter.Convert(srcMap, &result)
-	if err != nil {
-		t.Fatalf("Convert error: %v", err)
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			converter := NewConverter(DefaultOptions())
 
-	// Validate converted values
-	if result.Name != "John Doe" {
-		t.Errorf("Name: expected 'John Doe', got %q", result.Name)
-	}
+			result := reflect.New(tc.outputType).Interface()
+			err := converter.Convert(tc.input, result)
+			if err != nil {
+				t.Fatalf("Convert error: %v", err)
+			}
 
-	if result.Age != 30 {
-		t.Errorf("Age: expected 30, got %d", result.Age)
-	}
+			gotJSON, err := json.Marshal(result)
+			if err != nil {
+				t.Fatalf("Failed to marshal result: %v", err)
+			}
 
-	if !result.Active {
-		t.Errorf("Active: expected true, got false")
-	}
+			expectMap := map[string]interface{}{}
+			err = json.Unmarshal([]byte(tc.expectedJSON), &expectMap)
+			if err != nil {
+				t.Fatalf("Failed to marshal expected: %v", err)
+			}
+			actualMap := map[string]interface{}{}
+			err = json.Unmarshal(gotJSON, &actualMap)
+			if err != nil {
+				t.Fatalf("Failed to marshal expected: %v", err)
+			}
+			if !assert.EqualValues(t, expectMap, actualMap) {
+				fmt.Println("wanted", expectMap)
+				fmt.Println("had", actualMap)
 
-	if result.Address != "123 Main St" {
-		t.Errorf("Address: expected '123 Main St', got %q", result.Address)
-	}
-
-	if result.Details["country"] != "USA" {
-		t.Errorf("Details.country: expected 'USA', got %v", result.Details["country"])
-	}
-
-	if result.Details["zip"] != "12345" {
-		t.Errorf("Details.zip: expected '12345', got %v", result.Details["zip"])
+			}
+		})
 	}
 }
 
