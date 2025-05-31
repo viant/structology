@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 )
@@ -41,6 +42,7 @@ func DefaultOptions() Options {
 // Converter provides type conversion functionality
 type Converter struct {
 	options       Options
+	mux           sync.RWMutex
 	structCache   map[reflect.Type]*structInfo
 	customConvMap map[typeKey]ConversionFunc
 	structTypeMap map[string]bool // Map to track struct type signatures
@@ -66,7 +68,9 @@ func NewConverter(options Options) *Converter {
 
 // RegisterConversion registers a custom conversion function between source and destination types
 func (c *Converter) RegisterConversion(srcType, destType reflect.Type, fn ConversionFunc) {
+	c.mux.Lock()
 	c.customConvMap[typeKey{srcType, destType}] = fn
+	c.mux.Unlock()
 }
 
 // Convert converts the source value to the destination value
@@ -97,7 +101,10 @@ func (c *Converter) Convert(src interface{}, dest interface{}) error {
 	destElemType := destValue.Elem().Type()
 
 	// Try custom conversion first
-	if fn, exists := c.customConvMap[typeKey{srcType, destElemType}]; exists {
+	c.mux.RLock()
+	fn, exists := c.customConvMap[typeKey{srcType, destElemType}]
+	c.mux.RUnlock()
+	if exists {
 		return fn(src, dest, c.options)
 	}
 
@@ -202,7 +209,10 @@ func (c *Converter) areStructTypesCompatible(srcType, destType reflect.Type) boo
 
 	// If we've already determined these are compatible, return quickly
 	key := srcSig + "->" + destSig
-	if value, exists := c.structTypeMap[key]; exists {
+	c.mux.RLock()
+	value, exists := c.structTypeMap[key]
+	c.mux.RUnlock()
+	if exists {
 		return value
 	}
 
@@ -234,7 +244,9 @@ func (c *Converter) areStructTypesCompatible(srcType, destType reflect.Type) boo
 	}
 
 	// Cache the result
+	c.mux.Lock()
 	c.structTypeMap[key] = compatible
+	c.mux.Unlock()
 	return compatible
 }
 
@@ -817,17 +829,23 @@ type structInfo struct {
 }
 
 func (c *Converter) getStructInfo(t reflect.Type) *structInfo {
-	if info, ok := c.structCache[t]; ok {
+	c.mux.RLock()
+	info, ok := c.structCache[t]
+	c.mux.RUnlock()
+	if ok {
 		return info
 	}
 
-	info := &structInfo{
+	info = &structInfo{
 		fields:       make([]structField, 0),
 		fieldsByName: make(map[string]structField),
 	}
 
 	c.buildStructInfo(t, info, nil)
+
+	c.mux.Lock()
 	c.structCache[t] = info
+	c.mux.Unlock()
 	return info
 }
 
