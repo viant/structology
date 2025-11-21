@@ -7,12 +7,12 @@ import (
 	"unsafe"
 )
 
-// Marker field set marker
+// Marker represents a field presence marker
 type Marker struct {
 	t        reflect.Type
 	holder   *xunsafe.Field
 	fields   []*xunsafe.Field
-	index    map[string]int //marker field post
+	index    map[string]int // marker field position
 	noStrict bool
 }
 
@@ -24,7 +24,7 @@ func (p *Marker) Type() reflect.Type {
 	return p.holder.Type
 }
 
-// IsFieldSet returns true if filed has been set
+// IsFieldSet returns true if a field has been set
 func (p *Marker) IsFieldSet(ptr unsafe.Pointer, name string) bool {
 	idx := p.Index(name)
 	if idx == -1 { //no info we assume it's set
@@ -45,10 +45,10 @@ func (p *Marker) Index(name string) int {
 	return pos
 }
 
-// SetAll sets all marker field with supplied flag
+// SetAll sets all marker fields with the supplied flag
 func (p *Marker) SetAll(ptr unsafe.Pointer, flag bool) error {
 	if !p.CanUseHolder(ptr) {
-		return fmt.Errorf("failed to set all due to holder was empty")
+		return fmt.Errorf("failed to set all: holder is empty")
 	}
 	markerPtr := p.holder.ValuePointer(ptr)
 	for _, field := range p.fields {
@@ -67,10 +67,10 @@ func (p *Marker) CanUseHolder(ptr unsafe.Pointer) bool {
 	return true
 }
 
-// Set sets field marker
+// Set sets a field marker
 func (p *Marker) Set(ptr unsafe.Pointer, index int, flag bool) error {
 	if !p.CanUseHolder(ptr) {
-		return fmt.Errorf("holder was empty")
+		return fmt.Errorf("holder is empty")
 	}
 	markerPtr := p.holder.ValuePointer(ptr)
 	if index >= len(p.fields) || p.fields[index] == nil {
@@ -105,7 +105,7 @@ func (p *Marker) EnsureHolder(ptr unsafe.Pointer) {
 	p.holder.SetValue(ptr, value)
 }
 
-// Has checks if filed value was flagged as set
+// has checks if a field value was flagged as set
 func (p *Marker) has(ptr unsafe.Pointer, index int) bool {
 	markerPtr := p.holder.ValuePointer(ptr)
 	if index >= len(p.fields) || p.fields[index] == nil {
@@ -114,7 +114,7 @@ func (p *Marker) has(ptr unsafe.Pointer, index int) bool {
 	return p.fields[index].Bool(markerPtr)
 }
 
-// Init initialises field set marker
+// init initializes the field set marker
 func (p *Marker) init() error {
 	if p.holder == nil {
 		typeName := ""
@@ -136,7 +136,7 @@ func (p *Marker) init() error {
 				if p.noStrict {
 					continue
 				}
-				return fmt.Errorf("marker filed: '%v' does not have corresponding struct field", markerField.Name)
+				return fmt.Errorf("marker field '%v' does not have a corresponding struct field", markerField.Name)
 			}
 			p.fields[pos] = xunsafe.NewField(markerField)
 		}
@@ -149,8 +149,8 @@ func NewMarker(t reflect.Type, opts ...Option) (*Marker, error) {
 	if t = EnsureStructType(t); t == nil {
 		return nil, fmt.Errorf("supplied type is not struct")
 	}
-	numFiled := t.NumField()
-	var result = &Marker{t: t, fields: make([]*xunsafe.Field, numFiled), index: make(map[string]int, numFiled)}
+	numField := t.NumField()
+	var result = &Marker{t: t, fields: make([]*xunsafe.Field, numField), index: make(map[string]int, numField)}
 	Options(opts).Apply(result)
 	hasIndex := len(result.index) > 0
 	for i := 0; i < t.NumField(); i++ {

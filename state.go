@@ -101,12 +101,12 @@ func (s *State) Pointer() unsafe.Pointer {
 	return s.ptr
 }
 
-// State return state value
+// State returns the state value
 func (s *State) State() interface{} {
 	return s.value
 }
 
-// Sync syncs value ptr ot value if out of sync
+// Sync syncs value pointer to value if out of sync
 func (s *State) Sync() {
 	if s.valuePtr != nil && s.valuePtr != s.value {
 		s.value = reflect.ValueOf(s.valuePtr).Elem().Interface()
@@ -114,12 +114,12 @@ func (s *State) Sync() {
 	}
 }
 
-// SyncPointer syncs value ptr to value
+// SyncPointer syncs value pointer to value
 func (s *State) SyncPointer() {
 	s.valuePtr = reflect.NewAt(s.stateType.rType, s.ptr).Interface()
 }
 
-// StatePtr return state value
+// StatePtr returns a pointer to the state value
 func (s *State) StatePtr() interface{} {
 	return s.valuePtr
 }
@@ -142,7 +142,7 @@ func (s *State) SetPrimitive(aPath string, value interface{}, pathOptions ...Pat
 	return selector.Set(s.ptr, value, pathOptions...)
 }
 
-// SetString set string for supplied state path
+// SetString sets string for supplied state path
 func (s *State) SetString(aPath string, value string, pathOptions ...PathOption) error {
 	selector, err := s.Selector(aPath)
 	if err != nil {
@@ -152,7 +152,7 @@ func (s *State) SetString(aPath string, value string, pathOptions ...PathOption)
 	return nil
 }
 
-// SetInt set int for supplied path
+// SetInt sets int for supplied path
 func (s *State) SetInt(aPath string, value int, pathOptions ...PathOption) error {
 	selector, err := s.Selector(aPath)
 	if err != nil {
@@ -162,7 +162,7 @@ func (s *State) SetInt(aPath string, value int, pathOptions ...PathOption) error
 	return nil
 }
 
-// SetBool set bool for supplied state path
+// SetBool sets bool for supplied state path
 func (s *State) SetBool(aPath string, value bool, pathOptions ...PathOption) error {
 	selector, err := s.Selector(aPath)
 	if err != nil {
@@ -172,7 +172,7 @@ func (s *State) SetBool(aPath string, value bool, pathOptions ...PathOption) err
 	return nil
 }
 
-// SetFloat64 set float for supplied state path
+// SetFloat64 sets float64 for supplied state path
 func (s *State) SetFloat64(aPath string, value float64, pathOptions ...PathOption) error {
 	selector, err := s.Selector(aPath)
 	if err != nil {
@@ -182,7 +182,7 @@ func (s *State) SetFloat64(aPath string, value float64, pathOptions ...PathOptio
 	return nil
 }
 
-//SetFloat43 set float for supplied state path
+// SetFloat32 sets float32 for supplied state path
 
 func (s *State) SetFloat32(aPath string, value float32, pathOptions ...PathOption) error {
 	selector, err := s.Selector(aPath)
@@ -211,7 +211,7 @@ func (s *State) Values(aPath string, pathOptions ...PathOption) ([]interface{}, 
 	return selector.Values(s.ptr, pathOptions...), nil
 }
 
-// Bool returns a value for supplied path
+// Bool returns a bool for supplied path
 func (s *State) Bool(aPath string, pathOptions ...PathOption) (bool, error) {
 	selector, err := s.Selector(aPath)
 	if err != nil {
@@ -220,7 +220,7 @@ func (s *State) Bool(aPath string, pathOptions ...PathOption) (bool, error) {
 	return selector.Bool(s.ptr, pathOptions...), nil
 }
 
-// Bool returns a value for supplied path
+// String returns a string for supplied path
 func (s *State) String(aPath string, pathOptions ...PathOption) (string, error) {
 	selector, err := s.Selector(aPath)
 	if err != nil {
@@ -246,7 +246,7 @@ func (s *State) Selector(aPath string) (*Selector, error) {
 	return s.stateType.selectors.Items[index], nil
 }
 
-// MergeFrom merge stage with from state
+// MergeFrom merges state with the provided source state
 func (s *State) MergeFrom(from *State) error {
 	sType := s.Type()
 	for _, aSel := range sType.selectors.Root {

@@ -121,7 +121,7 @@ func int16ToInt(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer,
 
 func int32ToInt(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	ptr := xunsafe.AsPointer(src)
-	value := *(*int16)(ptr)
+	value := *(*int32)(ptr)
 	field.SetInt(structPtr, int(value))
 	return nil
 }
@@ -277,7 +277,7 @@ func anyToInterface(src interface{}, field *xunsafe.Field, structPtr unsafe.Poin
 	return nil
 }
 
-// LookupSetter  TODO add conversion []interface to specific primitive slcies
+// LookupSetter TODO: add conversion from []interface{} to specific primitive slices
 func LookupSetter(src reflect.Type, dest reflect.Type) Setter {
 	switch dest.Kind() {
 	case reflect.Interface:

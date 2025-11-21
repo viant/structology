@@ -23,6 +23,7 @@ type (
 		indexes       []int
 		indexPos      int
 		withMarkerSet bool
+		err           error
 		//keys    []string once we add map support
 	}
 
@@ -76,12 +77,20 @@ func newPathOptions(opts []PathOption) *pathOptions {
 	return result
 }
 
-func (p *path) setSliceItem(holderPtr unsafe.Pointer, value interface{}, options *pathOptions) {
+func (p *path) setSliceItem(holderPtr unsafe.Pointer, value interface{}, options *pathOptions) error {
 	if p.field != nil {
 		holderPtr = p.field.Pointer(holderPtr)
 	}
 	idx := options.index()
+	length := p.slice.Len(holderPtr)
+	if idx < 0 || idx >= length {
+		if options != nil {
+			options.err = fmt.Errorf("index out of range: %v, len: %v", idx, length)
+		}
+		return fmt.Errorf("index out of range: %v, len: %v", idx, length)
+	}
 	p.slice.SetValueAt(holderPtr, idx, value)
+	return nil
 }
 
 func (p paths) upstream(ptr unsafe.Pointer, options *pathOptions) (unsafe.Pointer, *path) {
@@ -91,6 +100,9 @@ func (p paths) upstream(ptr unsafe.Pointer, options *pathOptions) (unsafe.Pointe
 	}
 	for i := 0; i < count-1; i++ {
 		ptr = p[i].pointer(ptr, options)
+		if options != nil && options.err != nil {
+			break
+		}
 	}
 	leaf := p[count-1]
 	return ptr, leaf
@@ -118,6 +130,9 @@ func (p *path) pointer(parent unsafe.Pointer, options *pathOptions) unsafe.Point
 	}
 	if p.slice != nil {
 		ptr = p.item(ptr, options)
+		if options != nil && options.err != nil {
+			return parent
+		}
 	}
 	if p.isPtr {
 		ptr = xunsafe.DerefPointer(ptr)
@@ -131,8 +146,11 @@ func (p *path) pointer(parent unsafe.Pointer, options *pathOptions) unsafe.Point
 func (p *path) item(ptr unsafe.Pointer, options *pathOptions) unsafe.Pointer {
 	sliceLen := p.slice.Len(ptr)
 	index := options.index()
-	if index >= sliceLen {
-		panic(fmt.Sprintf("IndexOutOfRange: %v, len: %v", index, sliceLen))
+	if index < 0 || index >= sliceLen {
+		if options != nil {
+			options.err = fmt.Errorf("index out of range: %v, len: %v", index, sliceLen)
+		}
+		return ptr
 	}
 	return p.slice.PointerAt(ptr, uintptr(index))
 }

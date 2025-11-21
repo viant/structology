@@ -2,9 +2,7 @@
 [![GoReportCard](https://goreportcard.com/badge/github.com/viant/structology)](https://goreportcard.com/report/github.com/viant/structology)
 [![GoDoc](https://godoc.org/github.com/viant/structology?status.svg)](https://godoc.org/github.com/viant/structology)
 
-This library is compatible with Go 1.17+
-
-Please refer to [`CHANGELOG.md`](CHANGELOG.md) if you encounter breaking changes.
+This library is compatible with Go 1.23+
 
 - [Motivation](#motivation)
 - [Usage](#usage)
@@ -23,6 +21,15 @@ Initially we have a few project holding marker abstraction to finally move it to
 This project also implement a state that wraps arbitrary go struct, and provide selectors
 to dynamically access/mutate any nested/addressable values, if set marker is defined all set operation also
 would flag respective marker field 
+
+Why markers vs alternatives
+
+- Pointers/nullables: encode absence but pollute type shape and struggle with zero vs unset for primitives.
+- Zero-value heuristics: cannot distinguish deliberate zero from "unset", causing accidental overwrites.
+- Patch DTOs: explicit but require parallel types and maintenance-heavy mapping.
+- Field masks: powerful yet add separate infrastructure and don’t fit plain Go structs naturally.
+
+Markers keep models simple, make intent explicit, and integrate with path selectors for ergonomic partial updates.
 
 ## Usage
 
@@ -44,15 +51,16 @@ type (
 
     var entity *Entity
 
-	....// load entity and set all present fields with marker.Set(...)
+	// load entity and set all present fields with marker-aware setters
 
-	
-    marker, err := NewMarker()
-    if err != nil {
-        log.Fatal(err)
-    }
-    isIdSet := marker.IsSet(marker.Index("Id"))
-	fmt.Printf("is ID set : %v\n", isIdSet)
+	// Build a marker for Entity by type
+	m, err := structology.NewMarker(reflect.TypeOf(&Entity{}))
+	if err != nil {
+		log.Fatal(err)
+	}
+	ptr := xunsafe.AsPointer(entity)
+	isIdSet := m.IsSet(ptr, m.Index("Id"))
+	fmt.Printf("is ID set: %v\n", isIdSet)
 	
 }
 ```
@@ -116,7 +124,28 @@ func ShowStateUsage() {
 
 ```
 
-Check unit test for more advanced usage.
+Additional notes
+
+- Presence semantics:
+  - If a struct has no set-marker field or the marker holder is nil, all fields are assumed present (IsSet returns true).
+  - Extra fields in the main struct (without a corresponding marker bit) are allowed; their presence bit is simply not tracked.
+  - Extra fields in the marker struct cause an error by default; use `WithNoStrict(true)` to ignore unmatched marker fields.
+- Selectors and indexing:
+  - Use `WithPathIndex(i)` to access slice items, for example: `state.SetString("Items.Name", "X", WithPathIndex(1))`.
+  - On out-of-range index, `Set`/`SetValue` return an error; `Value` returns `nil`.
+- Options:
+  - `WithNoStrict(true)`: ignore marker fields that don’t exist on the main struct.
+  - `WithIndex(map[string]int)`: provide a custom name→index mapping for marker fields.
+
+Check unit tests for more advanced usage.
+
+Gotchas
+
+- Assume-present default: without a marker or with a nil marker holder, presence checks return true.
+- Untracked fields: fields without corresponding marker bits are allowed but not presence-tracked.
+- Strict by default: extra fields in the marker cause an error unless `WithNoStrict(true)` is used.
+- Indexing: setters (`Set`/`SetValue`) return error on out-of-range; `Value` returns nil.
+- Performance: this library uses reflection/unsafe—reuse `StateType`/`State` and avoid rebuilding selectors in hot paths.
 
 
 
@@ -125,7 +154,7 @@ Check unit test for more advanced usage.
 
 structology is an open source project and contributors are welcome!
 
-See [TODO](TODO.md) list
+Contributions are welcome via issues and pull requests.
 
 ## License
 
@@ -139,4 +168,3 @@ all compatible with Apache License, Version 2. Please see individual files for d
 ## Credits and Acknowledgements
 
 **Library Author:** Adrian Witas
-

@@ -43,9 +43,9 @@ func DefaultOptions() Options {
 type Converter struct {
 	options       Options
 	mux           sync.RWMutex
-	structCache   map[reflect.Type]*structInfo
-	customConvMap map[typeKey]ConversionFunc
-	structTypeMap map[string]bool // Map to track struct type signatures
+	structCache   sync.Map // map[reflect.Type]*structInfo
+	customConvMap sync.Map // map[typeKey]ConversionFunc
+	structTypeMap sync.Map // map[string]bool
 }
 
 // ConversionFunc defines a custom conversion function
@@ -59,18 +59,13 @@ type typeKey struct {
 // NewConverter creates a new type converter with the provided options
 func NewConverter(options Options) *Converter {
 	return &Converter{
-		options:       options,
-		structCache:   make(map[reflect.Type]*structInfo),
-		customConvMap: make(map[typeKey]ConversionFunc),
-		structTypeMap: make(map[string]bool),
+		options: options,
 	}
 }
 
 // RegisterConversion registers a custom conversion function between source and destination types
 func (c *Converter) RegisterConversion(srcType, destType reflect.Type, fn ConversionFunc) {
-	c.mux.Lock()
-	c.customConvMap[typeKey{srcType, destType}] = fn
-	c.mux.Unlock()
+	c.customConvMap.Store(typeKey{srcType, destType}, fn)
 }
 
 // Convert converts the source value to the destination value
@@ -101,11 +96,8 @@ func (c *Converter) Convert(src interface{}, dest interface{}) error {
 	destElemType := destValue.Elem().Type()
 
 	// Try custom conversion first
-	c.mux.RLock()
-	fn, exists := c.customConvMap[typeKey{srcType, destElemType}]
-	c.mux.RUnlock()
-	if exists {
-		return fn(src, dest, c.options)
+	if v, ok := c.customConvMap.Load(typeKey{srcType, destElemType}); ok {
+		return v.(ConversionFunc)(src, dest, c.options)
 	}
 
 	// Handle direct assignability
@@ -209,11 +201,8 @@ func (c *Converter) areStructTypesCompatible(srcType, destType reflect.Type) boo
 
 	// If we've already determined these are compatible, return quickly
 	key := srcSig + "->" + destSig
-	c.mux.RLock()
-	value, exists := c.structTypeMap[key]
-	c.mux.RUnlock()
-	if exists {
-		return value
+	if v, ok := c.structTypeMap.Load(key); ok {
+		return v.(bool)
 	}
 
 	// First time checking these types
@@ -244,9 +233,7 @@ func (c *Converter) areStructTypesCompatible(srcType, destType reflect.Type) boo
 	}
 
 	// Cache the result
-	c.mux.Lock()
-	c.structTypeMap[key] = compatible
-	c.mux.Unlock()
+	c.structTypeMap.Store(key, compatible)
 	return compatible
 }
 
@@ -829,23 +816,18 @@ type structInfo struct {
 }
 
 func (c *Converter) getStructInfo(t reflect.Type) *structInfo {
-	c.mux.RLock()
-	info, ok := c.structCache[t]
-	c.mux.RUnlock()
-	if ok {
-		return info
+	if v, ok := c.structCache.Load(t); ok {
+		return v.(*structInfo)
 	}
 
-	info = &structInfo{
+	info := &structInfo{
 		fields:       make([]structField, 0),
 		fieldsByName: make(map[string]structField),
 	}
 
 	c.buildStructInfo(t, info, nil)
 
-	c.mux.Lock()
-	c.structCache[t] = info
-	c.mux.Unlock()
+	c.structCache.Store(t, info)
 	return info
 }
 

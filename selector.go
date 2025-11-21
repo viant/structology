@@ -103,9 +103,17 @@ func (s *Selector) Value(ptr unsafe.Pointer, opts ...PathOption) interface{} {
 		options = newPathOptions(opts)
 	}
 	holderPtr, leafField := s.paths.upstream(ptr, options)
-	if leafField.slice != nil && options.hasIndex() {
+	if options != nil && options.err != nil {
+		return nil
+	}
+	if leafField.slice != nil && options != nil && options.hasIndex() {
 		ptr = leafField.field.Pointer(holderPtr)
-		return leafField.slice.ValueAt(ptr, options.index())
+		idx := options.index()
+		length := leafField.slice.Len(ptr)
+		if idx < 0 || idx >= length {
+			return nil
+		}
+		return leafField.slice.ValueAt(ptr, idx)
 	}
 	return leafField.field.Value(holderPtr)
 }
@@ -149,7 +157,7 @@ func (s *Selector) Bool(ptr unsafe.Pointer, opts ...PathOption) bool {
 
 func (s *Selector) asBoolValue(ptr unsafe.Pointer, opts []PathOption) bool {
 	value := s.Value(ptr, opts...)
-	return value.(bool) //panic is value is not boolean
+	return value.(bool) // panics if value is not boolean
 }
 
 func (s *Selector) Int(ptr unsafe.Pointer, opts ...PathOption) int {
@@ -162,7 +170,7 @@ func (s *Selector) Int(ptr unsafe.Pointer, opts ...PathOption) int {
 
 func (s *Selector) asIntValue(ptr unsafe.Pointer, opts []PathOption) int {
 	value := s.Value(ptr, opts...)
-	return value.(int) //panic is value is not boolean
+	return value.(int) // panics if value is not int
 }
 
 func (s *Selector) Float64(ptr unsafe.Pointer, opts ...PathOption) float64 {
@@ -175,7 +183,7 @@ func (s *Selector) Float64(ptr unsafe.Pointer, opts ...PathOption) float64 {
 
 func (s *Selector) asFloat64(ptr unsafe.Pointer, opts []PathOption) float64 {
 	value := s.Value(ptr, opts...)
-	return value.(float64) //panic is value is not boolean
+	return value.(float64) // panics if value is not float64
 }
 
 func (s *Selector) Float32(ptr unsafe.Pointer, opts ...PathOption) float32 {
@@ -188,7 +196,7 @@ func (s *Selector) Float32(ptr unsafe.Pointer, opts ...PathOption) float32 {
 
 func (s *Selector) asFloat32(ptr unsafe.Pointer, opts []PathOption) float32 {
 	value := s.Value(ptr, opts...)
-	return value.(float32) //panic is value is not boolean
+	return value.(float32) // panics if value is not float32
 }
 
 func (s *Selector) String(ptr unsafe.Pointer, opts ...PathOption) string {
@@ -201,7 +209,7 @@ func (s *Selector) String(ptr unsafe.Pointer, opts ...PathOption) string {
 
 func (s *Selector) asStringValue(ptr unsafe.Pointer, opts []PathOption) string {
 	value := s.Value(ptr, opts...)
-	return value.(string) //panic is value is not boolean
+	return value.(string) // panics if value is not string
 }
 
 func (s *Selector) Has(ptr unsafe.Pointer, opts ...PathOption) bool {
@@ -215,8 +223,13 @@ func (s *Selector) Has(ptr unsafe.Pointer, opts ...PathOption) bool {
 // SetValue sets selector value
 func (s *Selector) SetValue(ptr unsafe.Pointer, value interface{}, opts ...PathOption) (err error) {
 	options, holderPtr, aPath := s.upstreamWithMarker(ptr, opts)
+	if options != nil && options.err != nil {
+		return options.err
+	}
 	if aPath.slice != nil && options.hasIndex() {
-		aPath.setSliceItem(holderPtr, value, options)
+		if err := aPath.setSliceItem(holderPtr, value, options); err != nil {
+			return err
+		}
 		return nil
 	}
 	_ = aPath.setMarker(holderPtr)
@@ -238,8 +251,13 @@ func (s *Selector) SetValue(ptr unsafe.Pointer, value interface{}, opts ...PathO
 // Set sets selector value
 func (s *Selector) Set(ptr unsafe.Pointer, value interface{}, opts ...PathOption) error {
 	options, holderPtr, aPath := s.upstreamWithMarker(ptr, opts)
+	if options != nil && options.err != nil {
+		return options.err
+	}
 	if aPath.slice != nil && options.hasIndex() {
-		aPath.setSliceItem(holderPtr, value, options)
+		if err := aPath.setSliceItem(holderPtr, value, options); err != nil {
+			return err
+		}
 		return nil
 	}
 	_ = aPath.setMarker(holderPtr)
@@ -262,7 +280,7 @@ func (s *Selector) Set(ptr unsafe.Pointer, value interface{}, opts ...PathOption
 func (s *Selector) SetInt(ptr unsafe.Pointer, value int, opts ...PathOption) {
 	options, holderPtr, aPath := s.upstreamWithMarker(ptr, opts)
 	if aPath.slice != nil && options.hasIndex() {
-		aPath.setSliceItem(holderPtr, value, options)
+		_ = aPath.setSliceItem(holderPtr, value, options)
 		return
 	}
 	_ = aPath.setMarker(holderPtr)
@@ -273,7 +291,7 @@ func (s *Selector) SetInt(ptr unsafe.Pointer, value int, opts ...PathOption) {
 func (s *Selector) SetBool(ptr unsafe.Pointer, value bool, opts ...PathOption) {
 	options, holderPtr, aPath := s.upstreamWithMarker(ptr, opts)
 	if aPath.slice != nil && options.hasIndex() {
-		aPath.setSliceItem(holderPtr, value, options)
+		_ = aPath.setSliceItem(holderPtr, value, options)
 		return
 	}
 	_ = aPath.setMarker(holderPtr)
@@ -284,7 +302,7 @@ func (s *Selector) SetBool(ptr unsafe.Pointer, value bool, opts ...PathOption) {
 func (s *Selector) SetFloat64(ptr unsafe.Pointer, value float64, opts ...PathOption) {
 	options, holderPtr, aPath := s.upstreamWithMarker(ptr, opts)
 	if aPath.slice != nil && options.hasIndex() {
-		aPath.setSliceItem(holderPtr, value, options)
+		_ = aPath.setSliceItem(holderPtr, value, options)
 		return
 	}
 	_ = aPath.setMarker(holderPtr)
@@ -295,7 +313,7 @@ func (s *Selector) SetFloat64(ptr unsafe.Pointer, value float64, opts ...PathOpt
 func (s *Selector) SetFloat32(ptr unsafe.Pointer, value float32, opts ...PathOption) {
 	options, holderPtr, aPath := s.upstreamWithMarker(ptr, opts)
 	if aPath.slice != nil && options.hasIndex() {
-		aPath.setSliceItem(holderPtr, value, options)
+		_ = aPath.setSliceItem(holderPtr, value, options)
 		return
 	}
 	_ = aPath.setMarker(holderPtr)
@@ -306,7 +324,7 @@ func (s *Selector) SetFloat32(ptr unsafe.Pointer, value float32, opts ...PathOpt
 func (s *Selector) SetString(ptr unsafe.Pointer, value string, opts ...PathOption) {
 	options, holderPtr, aPath := s.upstreamWithMarker(ptr, opts)
 	if aPath.slice != nil && options.hasIndex() {
-		aPath.setSliceItem(holderPtr, value, options)
+		_ = aPath.setSliceItem(holderPtr, value, options)
 		return
 	}
 	_ = aPath.setMarker(holderPtr)
