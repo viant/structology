@@ -17,6 +17,7 @@ func TestNewSliceVisitor(t *testing.T) {
 		clone = append(clone, element)
 		return true, nil // continue iteration
 	})
+	assert.NoError(t, err)
 	assert.EqualValues(t, mySlice, clone)
 
 }

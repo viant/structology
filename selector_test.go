@@ -260,10 +260,6 @@ func TestSetter(t *testing.T) {
 			description: "repeated int",
 			selector:    "Values",
 			new: func() interface{} {
-				type FooHas struct {
-					Id     bool
-					Values bool
-				}
 				type Foo struct {
 					Id     int
 					Values []int

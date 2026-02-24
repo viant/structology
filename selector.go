@@ -54,7 +54,7 @@ func (s *Selectors) Add(key string, selector *Selector) {
 	index := len(s.Items)
 	s.Map[key] = index
 	s.Items = append(s.Items, selector)
-	if strings.Index(key, ".") == -1 {
+	if !strings.Contains(key, ".") {
 		s.Root = append(s.Root, selector)
 	}
 }

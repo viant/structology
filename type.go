@@ -7,7 +7,7 @@ import (
 
 var timeType = reflect.TypeOf(time.Time{})
 
-var timePtrType = reflect.PtrTo(timeType)
+var timePtrType = reflect.PointerTo(timeType)
 
 func isTimeType(candidate reflect.Type) bool {
 	return EnsureStructType(candidate) == timeType

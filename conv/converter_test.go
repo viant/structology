@@ -19,7 +19,6 @@ type SimpleStruct struct {
 	Collection  []*Basic
 	IgnoreField string `json:"-"`
 	Renamed     string `json:"custom_name"`
-	unexported  string
 }
 
 type StructB struct {

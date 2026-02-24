@@ -42,7 +42,6 @@ func DefaultOptions() Options {
 // Converter provides type conversion functionality
 type Converter struct {
 	options       Options
-	mux           sync.RWMutex
 	structCache   sync.Map // map[reflect.Type]*structInfo
 	customConvMap sync.Map // map[typeKey]ConversionFunc
 	structTypeMap sync.Map // map[string]bool

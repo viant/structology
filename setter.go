@@ -32,14 +32,6 @@ func WithTimeLayout(timeLayout string) SetterOption {
 	}
 }
 
-func newSetterOption(opts []SetterOption) *setterOptions {
-	ret := &setterOptions{}
-	for _, opt := range opts {
-		opt(ret)
-	}
-	return ret
-}
-
 func timeToString(src interface{}, field *xunsafe.Field, structPtr unsafe.Pointer, opts ...SetterOption) error {
 	value := src.(time.Time)
 	tag := fieldTag(field)

@@ -6,6 +6,8 @@ This library is compatible with Go 1.23+
 
 - [Motivation](#motivation)
 - [Usage](#usage)
+- [Why Another JSON Engine](#why-another-json-engine)
+- [JSON Benchmarks](#json-benchmarks)
 - [Contribution](#contributing-to-structology)
 - [License](#license)
 
@@ -146,6 +148,51 @@ Gotchas
 - Strict by default: extra fields in the marker cause an error unless `WithNoStrict(true)` is used.
 - Indexing: setters (`Set`/`SetValue`) return error on out-of-range; `Value` returns nil.
 - Performance: this library uses reflection/unsafe—reuse `StateType`/`State` and avoid rebuilding selectors in hot paths.
+
+## Why Another JSON Engine
+
+`structology/encoding/json` exists because we need semantics that standard JSON libraries do not provide as a first-class runtime concern:
+
+- Presence markers are the core requirement: update `setMarker:"true"` holders while decoding so code can distinguish `unset` vs `set to zero` vs `set to null`.
+- Patch safety by design: partial update payloads must not accidentally overwrite fields just because a type has a zero value.
+- Marker-aware compatibility: marshal/unmarshal must preserve marker behavior across nested structs, inline fields, and aliases.
+- Datly parity: preserve existing datly behavior for tags (`json`, `jsonx`), case formatting, inline embedding, and compatibility edge cases.
+- Low-allocation compiled execution: compile per-type marshal/unmarshal plans once, then execute with `xunsafe` accessors on hot paths.
+- Context-aware extension points: keep path-aware marshal/unmarshal hooks and custom codec callbacks with context propagation.
+
+The goal is not to replace `encoding/json` universally. The goal is marker-correct behavior for patch/update workloads first, and competitive performance for those shapes second.
+
+Recent JSON runtime updates:
+- Presence-marker robustness matrix added for alias/case-insensitive keys and `jsonx:"inline"` embedded paths.
+- Custom `UnmarshalJSON` path now uses raw JSON value spans directly in fast struct decode (no parsed->marshal round-trip there).
+- Typed container reuse expanded for unmarshal (`[]int`, `[]int64`, `[]float64`, `[]bool`, plus pointer variants), in addition to `[]string` and `map[string]string`.
+- `WithFormatTag(&format.Tag{...})` support added: global case-format mapping and time/date layout control for marshal/unmarshal (for example `CaseFormat`, `DateFormat`, `TimeLayout`).
+
+## JSON Benchmarks
+
+`structology/encoding/json` benchmark comparison against Go standard library (`encoding/json`), run on `darwin/arm64` (Apple M1 Max) on `2026-02-24`.
+
+Command:
+
+```bash
+go test ./encoding/json -run '^$' -bench 'BenchmarkCompare_(Marshal|Unmarshal)_(Basic|Advanced)_(Structology|Stdlib)$' -benchmem -benchtime=2s -count=1
+go test ./encoding/json/marshal -run '^$' -bench 'BenchmarkEngine_MarshalPtrTo_ReuseBuffer|BenchmarkStdlib_MarshalPtr' -benchmem -benchtime=2s -count=1
+```
+
+Results:
+
+| Benchmark | Structology | Stdlib |
+|---|---:|---:|
+| Marshal Basic | `87.63 ns/op`, `128 B/op`, `1 allocs/op` | `109.7 ns/op`, `48 B/op`, `1 allocs/op` |
+| Unmarshal Basic | `483.3 ns/op`, `128 B/op`, `13 allocs/op` | `519.4 ns/op`, `256 B/op`, `6 allocs/op` |
+| Marshal Advanced | `481.0 ns/op`, `560 B/op`, `6 allocs/op` | `655.6 ns/op`, `368 B/op`, `7 allocs/op` |
+| Unmarshal Advanced | `1406 ns/op`, `744 B/op`, `35 allocs/op` | `2120 ns/op`, `888 B/op`, `21 allocs/op` |
+| Marshal Ptr Reuse Buffer | `60.60 ns/op`, `0 B/op`, `0 allocs/op` | `109.6 ns/op`, `48 B/op`, `1 allocs/op` |
+
+Notes:
+- Marshal path is faster than stdlib on these basic/advanced cases.
+- Unmarshal path remains faster than stdlib on these benchmark shapes.
+- Correctness fixes for escaped-string decoding and input-buffer alias safety increased unmarshal allocations; next optimization focus is reducing those extra allocs without relaxing semantics.
 
 
 
