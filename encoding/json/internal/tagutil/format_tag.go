@@ -81,7 +81,7 @@ func ParseFormatFieldTag(sf reflect.StructField, baseName string) FormatFieldTag
 
 // ResolveFieldTag resolves precedence among json, jsonx and format tags.
 // Precedence:
-// 1) json explicit name/transient wins over format name/case.
+// 1) json explicit non-empty name/transient wins over format name/case.
 // 2) inline is enabled by anonymous or jsonx:inline or format:inline.
 // 3) ignore is enabled by json:"-" or internal:true or format:ignore.
 // 4) omitempty is enabled by json omitempty OR format omitempty.

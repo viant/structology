@@ -15,7 +15,7 @@ func ParseJSONTag(defaultName string, raw string) JSONTag {
 	}
 	parts := strings.Split(raw, ",")
 	name := parts[0]
-	explicit := true
+	explicit := name != ""
 	if name == "" {
 		name = defaultName
 	}

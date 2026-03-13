@@ -67,9 +67,9 @@ func TestFieldUnmarshalHook_Error(t *testing.T) {
 	type item struct {
 		A int
 	}
-	want := "hook-fail"
+	want := "failed to unmarshal A, hook-fail"
 	hook := func(_ context.Context, _ unsafe.Pointer, _ string, _ any) (any, error) {
-		return nil, errors.New(want)
+		return nil, errors.New("hook-fail")
 	}
 
 	var out item
