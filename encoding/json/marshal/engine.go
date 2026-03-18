@@ -1,6 +1,7 @@
 package marshal
 
 import (
+	"bytes"
 	"encoding"
 	stdjson "encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/francoispqt/gojay"
 	"github.com/viant/structology/encoding/json/internal/tagutil"
 	"github.com/viant/xunsafe"
 )
@@ -94,6 +96,8 @@ var (
 
 	jsonMarshalerType = reflect.TypeOf((*stdjson.Marshaler)(nil)).Elem()
 	textMarshalerType = reflect.TypeOf((*encoding.TextMarshaler)(nil)).Elem()
+	gojayObjectType   = reflect.TypeOf((*gojay.MarshalerJSONObject)(nil)).Elem()
+	gojayArrayType    = reflect.TypeOf((*gojay.MarshalerJSONArray)(nil)).Elem()
 )
 
 func New(nameTransform func(path []string, field string) string, exclude func(path []string, field string) bool, omitEmpty bool, nilSliceNull bool, timeLayout string, caseKey string, compileName func(string) string) *Engine {
@@ -445,6 +449,24 @@ func (e *Engine) tryAppendCustomMarshaler(sess *encoderSession, rv reflect.Value
 			sess.buf = strconv.AppendQuote(sess.buf, string(data))
 			return true, nil
 		}
+		if m, ok := rv.Interface().(gojay.MarshalerJSONObject); ok {
+			var buf bytes.Buffer
+			enc := gojay.NewEncoder(&buf)
+			if err := enc.EncodeObject(m); err != nil {
+				return true, err
+			}
+			sess.buf = append(sess.buf, buf.Bytes()...)
+			return true, nil
+		}
+		if m, ok := rv.Interface().(gojay.MarshalerJSONArray); ok {
+			var buf bytes.Buffer
+			enc := gojay.NewEncoder(&buf)
+			if err := enc.EncodeArray(m); err != nil {
+				return true, err
+			}
+			sess.buf = append(sess.buf, buf.Bytes()...)
+			return true, nil
+		}
 	}
 	if rv.Kind() != reflect.Ptr && rv.CanAddr() {
 		pv := rv.Addr()
@@ -465,6 +487,24 @@ func (e *Engine) tryAppendCustomMarshaler(sess *encoderSession, rv reflect.Value
 				sess.buf = strconv.AppendQuote(sess.buf, string(data))
 				return true, nil
 			}
+			if m, ok := pv.Interface().(gojay.MarshalerJSONObject); ok {
+				var buf bytes.Buffer
+				enc := gojay.NewEncoder(&buf)
+				if err := enc.EncodeObject(m); err != nil {
+					return true, err
+				}
+				sess.buf = append(sess.buf, buf.Bytes()...)
+				return true, nil
+			}
+			if m, ok := pv.Interface().(gojay.MarshalerJSONArray); ok {
+				var buf bytes.Buffer
+				enc := gojay.NewEncoder(&buf)
+				if err := enc.EncodeArray(m); err != nil {
+					return true, err
+				}
+				sess.buf = append(sess.buf, buf.Bytes()...)
+				return true, nil
+			}
 		}
 	}
 	return false, nil
@@ -481,10 +521,10 @@ func (e *Engine) hasCustomMarshalerType(rt reflect.Type) bool {
 	}
 	e.customMu.RUnlock()
 
-	has := rt.Implements(jsonMarshalerType) || rt.Implements(textMarshalerType)
+	has := rt.Implements(jsonMarshalerType) || rt.Implements(textMarshalerType) || rt.Implements(gojayObjectType) || rt.Implements(gojayArrayType)
 	if !has && rt.Kind() != reflect.Ptr {
 		prt := reflect.PointerTo(rt)
-		has = prt.Implements(jsonMarshalerType) || prt.Implements(textMarshalerType)
+		has = prt.Implements(jsonMarshalerType) || prt.Implements(textMarshalerType) || prt.Implements(gojayObjectType) || prt.Implements(gojayArrayType)
 	}
 
 	e.customMu.Lock()
@@ -824,15 +864,12 @@ func (e *Engine) appendMapStatic(sess *encoderSession, rv reflect.Value) error {
 	idx := 0
 	iter := rv.MapRange()
 	for iter.Next() {
-		k := iter.Key()
-		if k.Kind() != reflect.String {
-			continue
-		}
+		name := mapKeyString(iter.Key())
 		if idx > 0 {
 			sess.buf = append(sess.buf, ',')
 		}
 		idx++
-		sess.buf = strconv.AppendQuote(sess.buf, k.String())
+		sess.buf = strconv.AppendQuote(sess.buf, name)
 		sess.buf = append(sess.buf, ':')
 		if err := e.appendValue(sess, iter.Value()); err != nil {
 			return err
@@ -848,14 +885,7 @@ func (e *Engine) appendMapDynamic(sess *encoderSession, rv reflect.Value) error 
 	path := e.currentPath(sess)
 	iter := rv.MapRange()
 	for iter.Next() {
-		k := iter.Key()
-		if k.Kind() != reflect.String {
-			continue
-		}
-		name := k.String()
-		if e.hasTransform {
-			name = e.NameTransform(path, name)
-		}
+		name := mapKeyString(iter.Key())
 		if e.hasExclude && e.Exclude(path, name) {
 			continue
 		}
@@ -874,6 +904,19 @@ func (e *Engine) appendMapDynamic(sess *encoderSession, rv reflect.Value) error 
 	}
 	sess.buf = append(sess.buf, '}')
 	return nil
+}
+
+func mapKeyString(key reflect.Value) string {
+	switch key.Kind() {
+	case reflect.String:
+		return key.String()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return strconv.FormatInt(key.Int(), 10)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return strconv.FormatUint(key.Uint(), 10)
+	default:
+		return fmt.Sprint(key.Interface())
+	}
 }
 
 func structPointer(rv reflect.Value, rt reflect.Type) unsafe.Pointer {

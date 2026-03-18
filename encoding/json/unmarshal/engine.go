@@ -16,6 +16,7 @@ import (
 
 	"github.com/viant/structology/encoding/json/internal/lru"
 	"github.com/viant/structology/encoding/json/internal/tagutil"
+	ftime "github.com/viant/tagly/format/time"
 	"github.com/viant/xunsafe"
 )
 
@@ -234,7 +235,7 @@ func (e *Engine) unmarshalStructFromDecoder(d *scalarDecoder, structPtr unsafe.P
 						d.path = d.path[:len(d.path)-1]
 					}
 					if decodeErr != nil {
-						return decodeErr
+						return wrapPathError(key, decodeErr)
 					}
 				} else {
 					val, parseErr := d.parseValue()
@@ -248,7 +249,7 @@ func (e *Engine) unmarshalStructFromDecoder(d *scalarDecoder, structPtr unsafe.P
 						if pathPushed && len(d.path) > 0 {
 							d.path = d.path[:len(d.path)-1]
 						}
-						return err
+						return wrapPathError(key, err)
 					}
 				}
 			} else if hooksEnabled {
@@ -269,14 +270,14 @@ func (e *Engine) unmarshalStructFromDecoder(d *scalarDecoder, structPtr unsafe.P
 						if pathPushed && len(d.path) > 0 {
 							d.path = d.path[:len(d.path)-1]
 						}
-						return err
+						return wrapPathError(key, err)
 					}
 				}
 				if err = e.assignPlannedField(fieldPtr, fp, val); err != nil {
 					if pathPushed && len(d.path) > 0 {
 						d.path = d.path[:len(d.path)-1]
 					}
-					return err
+					return wrapPathError(key, err)
 				}
 			} else if customUnmarshal {
 				raw, rawErr := d.parseRawValue()
@@ -291,7 +292,7 @@ func (e *Engine) unmarshalStructFromDecoder(d *scalarDecoder, structPtr unsafe.P
 						if pathPushed && len(d.path) > 0 {
 							d.path = d.path[:len(d.path)-1]
 						}
-						return customErr
+						return wrapPathError(key, customErr)
 					}
 				} else {
 					val, parseErr := decodeJSON(raw, e.Hooks, e.DuplicateKeyPolicy, e.MalformedPolicy)
@@ -305,7 +306,7 @@ func (e *Engine) unmarshalStructFromDecoder(d *scalarDecoder, structPtr unsafe.P
 						if pathPushed && len(d.path) > 0 {
 							d.path = d.path[:len(d.path)-1]
 						}
-						return err
+						return wrapPathError(key, err)
 					}
 				}
 			} else if handled, decodeErr := e.tryDecodeTypedField(d, fp, fieldPtr); handled {
@@ -313,7 +314,7 @@ func (e *Engine) unmarshalStructFromDecoder(d *scalarDecoder, structPtr unsafe.P
 					if pathPushed && len(d.path) > 0 {
 						d.path = d.path[:len(d.path)-1]
 					}
-					return decodeErr
+					return wrapPathError(key, decodeErr)
 				}
 			} else {
 				val, parseErr := d.parseValue()
@@ -327,7 +328,7 @@ func (e *Engine) unmarshalStructFromDecoder(d *scalarDecoder, structPtr unsafe.P
 					if pathPushed && len(d.path) > 0 {
 						d.path = d.path[:len(d.path)-1]
 					}
-					return err
+					return wrapPathError(key, err)
 				}
 			}
 			if pathPushed && len(d.path) > 0 {
@@ -1694,7 +1695,7 @@ func assignValue(ptr unsafe.Pointer, rt reflect.Type, parsed interface{}, e *Eng
 			if !ok {
 				return fmt.Errorf("expected time string")
 			}
-			tm, err := time.Parse(e.timeLayout, s)
+			tm, err := ftime.Parse(e.timeLayout, s)
 			if err != nil {
 				return err
 			}
@@ -1703,7 +1704,7 @@ func assignValue(ptr unsafe.Pointer, rt reflect.Type, parsed interface{}, e *Eng
 		}
 		obj, ok := parsed.(map[string]interface{})
 		if !ok {
-			return fmt.Errorf("expected object")
+			return expectedObjectError(rt)
 		}
 		plan := planFor(rt, e.caseKey, e.compileName)
 		if plan.presence != nil {
@@ -1728,7 +1729,7 @@ func assignValue(ptr unsafe.Pointer, rt reflect.Type, parsed interface{}, e *Eng
 				val = transformed
 			}
 			if err := e.assignPlannedField(fp.resolve(ptr), fp, val); err != nil {
-				return err
+				return wrapPathError(key, err)
 			}
 			if plan.presence != nil && fp.presenceFlag != nil {
 				h := ensurePresenceHolder(ptr, plan.presence)
@@ -1871,7 +1872,7 @@ func assignValue(ptr unsafe.Pointer, rt reflect.Type, parsed interface{}, e *Eng
 		for i := 0; i < len(items); i++ {
 			elem := reflect.New(elemType)
 			if err := assignValue(xunsafe.AsPointer(elem.Interface()), elemType, items[i], e); err != nil {
-				return err
+				return wrapPathError(fmt.Sprintf("[%d]", i), err)
 			}
 			slice.Index(i).Set(elem.Elem())
 		}
@@ -1894,7 +1895,7 @@ func assignValue(ptr unsafe.Pointer, rt reflect.Type, parsed interface{}, e *Eng
 		for i := 0; i < limit; i++ {
 			elem := reflect.New(elemType)
 			if err := assignValue(xunsafe.AsPointer(elem.Interface()), elemType, items[i], e); err != nil {
-				return err
+				return wrapPathError(fmt.Sprintf("[%d]", i), err)
 			}
 			arr.Index(i).Set(elem.Elem())
 		}
@@ -1916,7 +1917,7 @@ func assignValue(ptr unsafe.Pointer, rt reflect.Type, parsed interface{}, e *Eng
 		for key, val := range obj {
 			elem := reflect.New(elemType)
 			if err := assignValue(xunsafe.AsPointer(elem.Interface()), elemType, val, e); err != nil {
-				return err
+				return wrapPathError(key, err)
 			}
 			mapKey := reflect.New(rt.Key()).Elem()
 			mapKey.SetString(key)
@@ -1926,6 +1927,13 @@ func assignValue(ptr unsafe.Pointer, rt reflect.Type, parsed interface{}, e *Eng
 		return nil
 	}
 	return nil
+}
+
+func expectedObjectError(rt reflect.Type) error {
+	if rt.Kind() == reflect.Struct {
+		return fmt.Errorf("Cannot unmarshal JSON to type '*json.structDecoder'")
+	}
+	return fmt.Errorf("expected object")
 }
 
 func tryAssignCustomUnmarshal(ptr unsafe.Pointer, rt reflect.Type, parsed interface{}, e *Engine) (bool, error) {
@@ -2075,7 +2083,7 @@ func assignTimeWithLayout(ptr unsafe.Pointer, rt reflect.Type, parsed interface{
 	if !ok {
 		return true, fmt.Errorf("expected time string")
 	}
-	tm, err := time.Parse(layout, s)
+	tm, err := ftime.Parse(layout, s)
 	if err != nil {
 		return true, err
 	}

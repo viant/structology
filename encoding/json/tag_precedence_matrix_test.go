@@ -25,18 +25,28 @@ func TestTagPrecedence_JSONBeatsFormatNameCase(t *testing.T) {
 	require.Equal(t, 0, out.A)
 }
 
-func TestTagPrecedence_JSONExplicitEmptyBeatsFormatCase(t *testing.T) {
+func TestTagPrecedence_JSONEmptyNameAllowsFieldCaseFormat(t *testing.T) {
 	type payload struct {
 		UserID int `json:",omitempty" format:"caseFormat=lowerUnderscore"`
 	}
 
 	data, err := Marshal(payload{UserID: 1})
 	require.NoError(t, err)
-	require.JSONEq(t, `{"UserID":1}`, string(data))
+	require.JSONEq(t, `{"user_id":1}`, string(data))
 
 	data, err = Marshal(payload{UserID: 1}, WithCaseFormat(text.CaseFormatLowerCamel))
 	require.NoError(t, err)
-	require.JSONEq(t, `{"UserID":1}`, string(data))
+	require.JSONEq(t, `{"user_id":1}`, string(data))
+}
+
+func TestTagPrecedence_JSONEmptyNameAllowsTopLevelCaseFormat(t *testing.T) {
+	type payload struct {
+		BuildTimeMs int `json:",omitempty"`
+	}
+
+	data, err := Marshal(payload{BuildTimeMs: 12}, WithCaseFormat(text.CaseFormatLowerCamel))
+	require.NoError(t, err)
+	require.JSONEq(t, `{"buildTimeMs":12}`, string(data))
 }
 
 func TestTagPrecedence_IgnoreBeatsInline(t *testing.T) {
