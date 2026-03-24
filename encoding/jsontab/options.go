@@ -64,12 +64,20 @@ func WithTimeLayout(layout string) Option {
 	})
 }
 
+func WithFloatPrecision(precision int) Option {
+	return optionFn(func(o *Options) {
+		o.FloatPrecision = precision
+		o.setPrecision = true
+	})
+}
+
 func defaultOptions() Options {
 	return Options{
 		Mode:                ModeCompat,
 		TagName:             "csvName",
 		CaseFormat:          text.CaseFormatUndefined,
 		TimeLayout:          time.RFC3339,
+		FloatPrecision:      -1,
 		UnknownHeaderPolicy: IgnoreUnknownHeader,
 		ArityPolicy:         AllowArityMismatch,
 		MalformedPolicy:     TolerantMalformed,
@@ -95,6 +103,9 @@ func resolveOptions(ctx context.Context, opts []Option) Options {
 	}
 	if result.TimeLayout == "" {
 		result.TimeLayout = time.RFC3339
+	}
+	if !result.setPrecision {
+		result.FloatPrecision = -1
 	}
 	if result.Mode == ModeStrict {
 		if !result.setUnknown {

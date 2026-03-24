@@ -45,6 +45,7 @@ type Options struct {
 	TagName             string
 	CaseFormat          text.CaseFormat
 	TimeLayout          string
+	FloatPrecision      int
 	UnknownHeaderPolicy UnknownHeaderPolicy
 	ArityPolicy         ArityPolicy
 	MalformedPolicy     MalformedPolicy
@@ -52,6 +53,7 @@ type Options struct {
 	setTagName    bool
 	setCaseFormat bool
 	setTimeLayout bool
+	setPrecision  bool
 	setMode       bool
 	setUnknown    bool
 	setArity      bool
