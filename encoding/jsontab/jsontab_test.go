@@ -76,3 +76,15 @@ func TestMarshal_CaseFormatDefaultNames(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, in, out)
 }
+
+func TestMarshal_FloatPrecision(t *testing.T) {
+	type item struct {
+		Price float64 `csvName:"price"`
+		Tax   float32 `csvName:"tax"`
+	}
+	in := []item{{Price: 1.123456789, Tax: 0.011234567}}
+
+	data, err := Marshal(in, WithFloatPrecision(4))
+	require.NoError(t, err)
+	require.JSONEq(t, `[["price","tax"],[1.1235,0.0112]]`, string(data))
+}

@@ -4,6 +4,7 @@ import (
 	stdjson "encoding/json"
 	"fmt"
 	"reflect"
+	"strconv"
 	"time"
 	"unsafe"
 
@@ -17,16 +18,17 @@ type Engine struct {
 	caseKey     string
 	compileName func(string) string
 	timeLayout  string
+	precision   int
 }
 
-func New(tagName, caseKey string, compileName func(string) string, timeLayout string) *Engine {
+func New(tagName, caseKey string, compileName func(string) string, timeLayout string, precision int) *Engine {
 	if tagName == "" {
 		tagName = "csvName"
 	}
 	if timeLayout == "" {
 		timeLayout = time.RFC3339
 	}
-	return &Engine{tagName: tagName, caseKey: caseKey, compileName: compileName, timeLayout: timeLayout}
+	return &Engine{tagName: tagName, caseKey: caseKey, compileName: compileName, timeLayout: timeLayout, precision: precision}
 }
 
 func (e *Engine) Marshal(value interface{}) ([]byte, error) {
@@ -130,7 +132,33 @@ func (e *Engine) scalarValue(fieldPtr unsafe.Pointer, rType reflect.Type) (inter
 		}
 		return tm.Format(e.timeLayout), nil
 	}
+	switch rType.Kind() {
+	case reflect.Float32:
+		value := *(*float32)(fieldPtr)
+		return e.formatFloat(float64(value), 32)
+	case reflect.Float64:
+		value := *(*float64)(fieldPtr)
+		return e.formatFloat(value, 64)
+	}
 	return reflect.NewAt(rType, fieldPtr).Elem().Interface(), nil
+}
+
+func (e *Engine) formatFloat(value float64, bitSize int) (interface{}, error) {
+	if e.precision < 0 {
+		if bitSize == 32 {
+			return float32(value), nil
+		}
+		return value, nil
+	}
+	formatted := strconv.FormatFloat(value, 'f', e.precision, bitSize)
+	parsed, err := strconv.ParseFloat(formatted, bitSize)
+	if err != nil {
+		return nil, err
+	}
+	if bitSize == 32 {
+		return float32(parsed), nil
+	}
+	return parsed, nil
 }
 
 func (e *Engine) childStructTable(fieldPtr unsafe.Pointer, f *plan.Field) (interface{}, error) {

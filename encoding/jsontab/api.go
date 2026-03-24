@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	defaultMarshalEngine   = jsmarshal.New("csvName", "", nil, "")
+	defaultMarshalEngine   = jsmarshal.New("csvName", "", nil, "", -1)
 	defaultUnmarshalEngine = jsunmarshal.New(
 		"csvName",
 		"",
@@ -33,7 +33,7 @@ func MarshalContext(ctx context.Context, value interface{}, opts ...Option) ([]b
 		caseKey = string(cfg.CaseFormat)
 		compileName = func(field string) string { return tr.Transform(field) }
 	}
-	m := jsmarshal.New(cfg.TagName, caseKey, compileName, cfg.TimeLayout)
+	m := jsmarshal.New(cfg.TagName, caseKey, compileName, cfg.TimeLayout, cfg.FloatPrecision)
 	return m.Marshal(value)
 }
 
