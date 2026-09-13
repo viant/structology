@@ -953,7 +953,7 @@ func (e *Engine) getDynamicPlan(rt reflect.Type) *structPlan {
 		return p
 	}
 	e.planMu.RUnlock()
-	plan := buildStructPlan(rt, nil, e.hasCustomMarshalerType)
+	plan := buildStructPlan(rt, e.compileName, e.hasCustomMarshalerType)
 	e.planMu.Lock()
 	if p := e.dynamicPlans[rt]; p != nil {
 		e.planMu.Unlock()
