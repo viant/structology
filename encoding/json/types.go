@@ -158,7 +158,9 @@ type Option interface{ apply(*Options) }
 
 // Options defines runtime behavior.
 type Options struct {
-	Ctx context.Context
+	// ExcludedFields contains canonical Go-field paths for marshal projection.
+	ExcludedFields []string
+	Ctx            context.Context
 
 	Mode               Mode
 	UnknownFieldPolicy UnknownFieldPolicy

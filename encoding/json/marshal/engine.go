@@ -18,8 +18,9 @@ import (
 
 // Engine marshals values with transform/exclusion hooks.
 type Engine struct {
-	NameTransform func(path []string, field string) string
-	Exclude       func(path []string, field string) bool
+	fieldExclusions map[fieldLocation]bool
+	NameTransform   func(path []string, field string) string
+	Exclude         func(path []string, field string) bool
 
 	hasTransform bool
 	hasExclude   bool
@@ -38,6 +39,7 @@ type Engine struct {
 }
 
 type structPlan struct {
+	hidden    map[string]bool
 	fields    []fieldPlan
 	fastOnly  bool
 	fastOps   []fastFieldOp
@@ -46,6 +48,7 @@ type structPlan struct {
 }
 
 type fieldPlan struct {
+	owner      reflect.Type
 	fieldName  string
 	name       string
 	keyLit     []byte
@@ -772,7 +775,7 @@ func (e *Engine) appendStructFieldsDynamic(sess *encoderSession, rv reflect.Valu
 			}
 			continue
 		}
-		if e.hasExclude && e.Exclude(path, p.fieldName) {
+		if e.excludeField(path, *p) {
 			continue
 		}
 		name := p.name
@@ -886,7 +889,7 @@ func (e *Engine) appendMapDynamic(sess *encoderSession, rv reflect.Value) error 
 	iter := rv.MapRange()
 	for iter.Next() {
 		name := mapKeyString(iter.Key())
-		if e.hasExclude && e.Exclude(path, name) {
+		if e.Exclude != nil && e.Exclude(path, name) {
 			continue
 		}
 		if idx > 0 {
@@ -966,6 +969,7 @@ func (e *Engine) getDynamicPlan(rt reflect.Type) *structPlan {
 
 func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom func(reflect.Type) bool) *structPlan {
 	result := &structPlan{
+		hidden:    map[string]bool{},
 		fields:    make([]fieldPlan, 0, rt.NumField()),
 		fastOnly:  true,
 		fastOps:   make([]fastFieldOp, 0, rt.NumField()),
@@ -980,6 +984,7 @@ func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom
 			continue
 		}
 		if field.Tag.Get("setMarker") == "true" {
+			result.hidden[field.Name] = true
 			continue
 		}
 		resolved := tagutil.ResolveFieldTag(field)
@@ -1005,6 +1010,7 @@ func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom
 			fast = false
 		}
 		fp := fieldPlan{
+			owner:      rt,
 			fieldName:  field.Name,
 			name:       name,
 			keyLit:     appendQuotedName(nil, name),
