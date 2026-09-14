@@ -17,6 +17,7 @@ require (
 	github.com/viant/parsly v0.3.3 // indirect
 	github.com/viant/sqlx v0.21.0 // indirect
 	github.com/viant/toolbox v0.37.0 // indirect
+	github.com/viant/x v0.4.1-0.20260914174450-0e043f24aec5
 	github.com/viant/xreflect v0.7.3 // indirect
 	golang.org/x/mod v0.28.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

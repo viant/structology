@@ -19,6 +19,7 @@ type WireShape struct {
 	element    *WireShape
 }
 type WireProperty struct {
+	field    reflect.StructField
 	name     string
 	required bool
 	shape    *WireShape
@@ -31,9 +32,17 @@ func (s *WireShape) Length() int                { return s.length }
 func (s *WireShape) Format() string             { return s.format }
 func (s *WireShape) Properties() []WireProperty { return append([]WireProperty(nil), s.properties...) }
 func (s *WireShape) Element() *WireShape        { return s.element }
-func (p WireProperty) Name() string             { return p.name }
-func (p WireProperty) Required() bool           { return p.required }
-func (p WireProperty) Shape() *WireShape        { return p.shape }
+
+// Field returns provenance indexed from the containing WireShape.Source,
+// including anonymous/inline ancestors. Returned indexes are detached.
+func (p WireProperty) Field() reflect.StructField {
+	field := p.field
+	field.Index = append([]int(nil), field.Index...)
+	return field
+}
+func (p WireProperty) Name() string      { return p.name }
+func (p WireProperty) Required() bool    { return p.required }
+func (p WireProperty) Shape() *WireShape { return p.shape }
 
 // Wire projects existing plans and hooks without sampling any output values.
 func (e *Engine) Wire(t reflect.Type) (*WireShape, error) {
@@ -79,7 +88,7 @@ func (c *wireCompiler) value(t reflect.Type, path []string) (*WireShape, error) 
 		if plan.inlineIdx >= 0 {
 			return nil, fmt.Errorf("whole-value inline JSON requires explicit wire authority: %s", t)
 		}
-		if err := c.fields(result, plan, path, false); err != nil {
+		if err := c.fields(result, plan, path, nil, false); err != nil {
 			return nil, err
 		}
 	case reflect.Slice, reflect.Array:
@@ -118,7 +127,7 @@ func (c *wireCompiler) value(t reflect.Type, path []string) (*WireShape, error) 
 	return result, nil
 }
 
-func (c *wireCompiler) fields(target *WireShape, plan *structPlan, path []string, optional bool) error {
+func (c *wireCompiler) fields(target *WireShape, plan *structPlan, path []string, indexes []int, optional bool) error {
 	for _, field := range plan.fields {
 		if field.ignore {
 			continue
@@ -144,7 +153,7 @@ func (c *wireCompiler) fields(target *WireShape, plan *structPlan, path []string
 			if nested.inlineIdx >= 0 {
 				return fmt.Errorf("whole-value inline JSON field %s", field.fieldName)
 			}
-			err := c.fields(target, nested, path, optional || nullable)
+			err := c.fields(target, nested, path, append(append([]int(nil), indexes...), field.index), optional || nullable)
 			delete(c.inline, base)
 			if err != nil {
 				return err
@@ -183,7 +192,9 @@ func (c *wireCompiler) fields(target *WireShape, plan *structPlan, path []string
 			copy.nullable = true
 			item = &copy
 		}
-		target.properties = append(target.properties, WireProperty{name: name, required: !optional && !field.omitempty && !c.engine.omitEmpty, shape: item})
+		source := field.owner.Field(field.index)
+		source.Index = append(append([]int(nil), indexes...), source.Index...)
+		target.properties = append(target.properties, WireProperty{field: source, name: name, required: !optional && !field.omitempty && !c.engine.omitEmpty, shape: item})
 	}
 	return nil
 }
