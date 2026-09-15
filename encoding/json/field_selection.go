@@ -85,7 +85,11 @@ selectionLoop:
 				if cfg != nil {
 					resolved := tagutil.ResolveFieldTag(field.Field.StructField())
 					name = resolved.Name
-					if !resolved.Explicit {
+					if tr, ok := cfg.NameTransformer.(caseFormatTransformer); ok && cfg.PathName == nil {
+						if !resolved.CaseExplicit {
+							name = tr.Transform("", name)
+						}
+					} else if !resolved.Explicit {
 						if cfg.PathName != nil {
 							name = cfg.PathName.TransformPath(path, name)
 						} else if cfg.NameTransformer != nil {

@@ -994,7 +994,7 @@ func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom
 		inlineRaw := inline && (field.Type == rawMsgType || (field.Type.Kind() == reflect.Ptr && field.Type.Elem() == rawMsgType))
 		name := resolved.Name
 		explicit := resolved.Explicit
-		if compileName != nil && !explicit {
+		if compileName != nil && !resolved.CaseExplicit {
 			name = compileName(name)
 		}
 		kind := field.Type.Kind()
