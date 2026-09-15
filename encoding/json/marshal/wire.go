@@ -59,15 +59,20 @@ func (c *wireCompiler) value(t reflect.Type, path []string) (*WireShape, error) 
 	if t == nil {
 		return nil, fmt.Errorf("wire type is required")
 	}
-	if c.engine.hasCustomMarshalerType(t) {
-		return nil, fmt.Errorf("opaque JSON encoder for %s has no wire contract", t)
-	}
 	if t.Kind() == reflect.Pointer {
 		item, err := c.value(t.Elem(), path)
 		if err != nil {
 			return nil, err
 		}
 		return &WireShape{source: t, kind: reflect.Pointer, nullable: true, element: item, length: -1}, nil
+	}
+	if c.engine.hasCustomMarshalerType(t) {
+		shape := customWireShape(t)
+		pointer := reflect.PointerTo(t)
+		if t.Implements(gojayObjectType) || pointer.Implements(gojayObjectType) || t.Implements(gojayArrayType) || pointer.Implements(gojayArrayType) {
+			shape.kind, shape.nullable = reflect.Interface, true
+		}
+		return shape, nil
 	}
 	if t == timeType {
 		return c.time(t, c.engine.timeLayout), nil

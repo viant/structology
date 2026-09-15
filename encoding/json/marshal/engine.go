@@ -48,6 +48,7 @@ type structPlan struct {
 }
 
 type fieldPlan struct {
+	custom     bool
 	owner      reflect.Type
 	fieldName  string
 	name       string
@@ -1006,10 +1007,12 @@ func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom
 		if fTag.Nullable {
 			fast = false
 		}
-		if hasCustom != nil && hasCustom(field.Type) {
+		custom := hasCustom != nil && hasCustom(field.Type)
+		if custom {
 			fast = false
 		}
 		fp := fieldPlan{
+			custom:     custom,
 			owner:      rt,
 			fieldName:  field.Name,
 			name:       name,
@@ -1094,6 +1097,10 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 			}
 			return nil
 		}
+	}
+
+	if fp.custom {
+		return compileValueFieldOp(fp)
 	}
 
 	if fp.fast {
@@ -1311,6 +1318,12 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 			}
 		}
 	}
+
+	return compileValueFieldOp(fp)
+}
+
+func compileValueFieldOp(fp fieldPlan) staticFieldOp {
+	xField, keyLit, omit := fp.xField, fp.keyLit, fp.omitempty
 
 	rType := fp.rType
 	nullable := fp.nullable

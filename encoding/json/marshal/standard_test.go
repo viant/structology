@@ -76,12 +76,13 @@ func TestStandardWireUsesStandardPolicy(t *testing.T) {
 type stdCustom int
 
 func (stdCustom) MarshalJSON() ([]byte, error) { return []byte(`"opaque"`), nil }
-func TestStandardWireRejectsOpaqueEvenWithString(t *testing.T) {
+func TestStandardWireKeepsCustomJSONUnconstrainedEvenWithString(t *testing.T) {
 	type sample struct {
 		Value stdCustom `json:",string"`
 	}
-	_, err := NewStandard(reflect.TypeFor[sample]()).Wire()
-	require.ErrorContains(t, err, "opaque standard JSON encoder")
+	shape, err := NewStandard(reflect.TypeFor[sample]()).Wire()
+	require.NoError(t, err)
+	require.Equal(t, reflect.Interface, shape.Properties()[0].Shape().Kind())
 	raw, err := json.Marshal(sample{})
 	require.NoError(t, err)
 	require.JSONEq(t, `{"Value":"opaque"}`, string(raw))

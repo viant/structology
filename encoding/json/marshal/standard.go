@@ -41,15 +41,16 @@ func (c *standardCompiler) value(t reflect.Type) (*WireShape, error) {
 	if t == reflect.TypeFor[time.Time]() {
 		return &WireShape{source: t, kind: reflect.String, length: -1, format: "date-time"}, nil
 	}
-	if !isTimeTypeOrPtr(t) && (t.Implements(reflect.TypeFor[stdjson.Marshaler]()) || reflect.PointerTo(t).Implements(reflect.TypeFor[stdjson.Marshaler]()) || t.Implements(reflect.TypeFor[encoding.TextMarshaler]()) || reflect.PointerTo(t).Implements(reflect.TypeFor[encoding.TextMarshaler]())) {
-		return nil, fmt.Errorf("opaque standard JSON encoder for %s has no wire contract", t)
-	}
+
 	if t.Kind() == reflect.Pointer {
 		element, err := c.value(t.Elem())
 		if err != nil {
 			return nil, err
 		}
 		return &WireShape{source: t, kind: reflect.Pointer, nullable: true, length: -1, element: element}, nil
+	}
+	if !isTimeTypeOrPtr(t) && (t.Implements(reflect.TypeFor[stdjson.Marshaler]()) || reflect.PointerTo(t).Implements(reflect.TypeFor[stdjson.Marshaler]()) || t.Implements(reflect.TypeFor[encoding.TextMarshaler]()) || reflect.PointerTo(t).Implements(reflect.TypeFor[encoding.TextMarshaler]())) {
+		return customWireShape(t), nil
 	}
 	if prior := c.objects[t]; prior != nil {
 		return prior, nil
@@ -75,7 +76,7 @@ func (c *standardCompiler) value(t reflect.Type) (*WireShape, error) {
 			if err != nil {
 				return nil, fmt.Errorf("field %s: %w", field.Name, err)
 			}
-			if field.Quoted {
+			if field.Quoted && !hasStandardWireMarshaler(field.Field.ReflectedType) {
 				property = &WireShape{source: field.Field.ReflectedType, kind: reflect.String, nullable: field.Field.ReflectedType.Kind() == reflect.Pointer, length: -1}
 			}
 			result.properties = append(result.properties, WireProperty{field: field.Field.StructField(), name: field.Name, required: !field.MayOmit(), shape: property})
