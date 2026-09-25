@@ -76,7 +76,7 @@ func (c *standardCompiler) value(t reflect.Type) (*WireShape, error) {
 			if err != nil {
 				return nil, fmt.Errorf("field %s: %w", field.Name, err)
 			}
-			if field.Quoted && !hasStandardWireMarshaler(field.Field.ReflectedType) {
+			if (field.Quoted || standardQuotedNamedPointer(field.Field.ReflectedType, field.Field.Tag)) && !hasStandardWireMarshaler(field.Field.ReflectedType) {
 				property = &WireShape{source: field.Field.ReflectedType, kind: reflect.String, nullable: field.Field.ReflectedType.Kind() == reflect.Pointer, length: -1}
 			}
 			result.properties = append(result.properties, WireProperty{field: field.Field.StructField(), name: field.Name, required: !field.MayOmit(), shape: property})
