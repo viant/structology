@@ -1633,16 +1633,8 @@ func primitiveEmptyFunc(kind, ptrElem reflect.Kind) func(unsafe.Pointer) bool {
 	case reflect.Float64:
 		return isEmptyFloat64Pointer
 	case reflect.Ptr:
-		inner := primitiveEmptyFunc(ptrElem, reflect.Invalid)
-		if inner == nil {
-			return nil
-		}
 		return func(ptr unsafe.Pointer) bool {
-			p := *(*unsafe.Pointer)(ptr)
-			if p == nil {
-				return true
-			}
-			return inner(p)
+			return *(*unsafe.Pointer)(ptr) == nil
 		}
 	default:
 		return nil

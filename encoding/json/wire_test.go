@@ -99,7 +99,7 @@ func TestWireCollisionAndOmission(t *testing.T) {
 	zero := 0
 	bytes, err := encoder.Marshal(sample{Value: &zero})
 	require.NoError(t, err)
-	require.JSONEq(t, `{}`, string(bytes), "native primitive pointers omit pointee zero")
+	require.JSONEq(t, `{"Value":0}`, string(bytes), "nonnil primitive pointers retain pointee zero")
 }
 
 func TestCanonicalExclusionDoesNotDropOtherOwner(t *testing.T) {
