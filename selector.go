@@ -104,6 +104,9 @@ func (s *Selector) Value(ptr unsafe.Pointer, opts ...PathOption) interface{} {
 		options = newPathOptions(opts)
 	}
 	holderPtr, leafField := s.paths.upstream(ptr, options)
+	if holderPtr == nil {
+		return nil
+	}
 	if options != nil && options.err != nil {
 		return nil
 	}
@@ -214,7 +217,14 @@ func (s *Selector) asStringValue(ptr unsafe.Pointer, opts []PathOption) string {
 }
 
 func (s *Selector) Has(ptr unsafe.Pointer, opts ...PathOption) bool {
-	_, holderPtr, aPath := s.upstreamWithMarker(ptr, opts)
+	var options *pathOptions
+	if len(opts) > 0 {
+		options = newPathOptions(opts)
+	}
+	holderPtr, aPath := s.paths.upstream(ptr, options)
+	if holderPtr == nil || (options != nil && options.err != nil) {
+		return false
+	}
 	if aPath.marker == nil {
 		return true
 	}
