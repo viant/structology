@@ -595,9 +595,16 @@ func (e *Engine) appendStructStatic(sess *encoderSession, rv reflect.Value) erro
 				}
 				inlineVal = inlineVal.Elem()
 			}
-			if !skipInline && inlineVal.Kind() == reflect.Struct {
-				if err := e.appendStructFieldsStatic(sess, inlineVal, &fieldCounter); err != nil {
-					return err
+			if !skipInline {
+				switch inlineVal.Kind() {
+				case reflect.Struct:
+					if err := e.appendStructFieldsStatic(sess, inlineVal, &fieldCounter); err != nil {
+						return err
+					}
+				case reflect.Map:
+					if err := e.appendMapFields(sess, inlineVal, &fieldCounter); err != nil {
+						return err
+					}
 				}
 			}
 			continue
@@ -672,9 +679,16 @@ func (e *Engine) appendStructFieldsStatic(sess *encoderSession, rv reflect.Value
 				}
 				inlineVal = inlineVal.Elem()
 			}
-			if !skipInline && inlineVal.Kind() == reflect.Struct {
-				if err := e.appendStructFieldsStatic(sess, inlineVal, counter); err != nil {
-					return err
+			if !skipInline {
+				switch inlineVal.Kind() {
+				case reflect.Struct:
+					if err := e.appendStructFieldsStatic(sess, inlineVal, counter); err != nil {
+						return err
+					}
+				case reflect.Map:
+					if err := e.appendMapFields(sess, inlineVal, counter); err != nil {
+						return err
+					}
 				}
 			}
 			continue
@@ -767,11 +781,18 @@ func (e *Engine) appendStructFieldsDynamic(sess *encoderSession, rv reflect.Valu
 				}
 				inlineVal = inlineVal.Elem()
 			}
-			if inlineVal.IsValid() && inlineVal.Kind() == reflect.Struct {
-				inlineVal, inlinePtr := addressableStruct(inlineVal)
-				inlinePlan := e.getDynamicPlan(inlineVal.Type())
-				if err := e.appendStructFieldsDynamic(sess, inlineVal, inlinePlan, inlinePtr, counter); err != nil {
-					return err
+			if inlineVal.IsValid() {
+				switch inlineVal.Kind() {
+				case reflect.Struct:
+					inlineVal, inlinePtr := addressableStruct(inlineVal)
+					inlinePlan := e.getDynamicPlan(inlineVal.Type())
+					if err := e.appendStructFieldsDynamic(sess, inlineVal, inlinePlan, inlinePtr, counter); err != nil {
+						return err
+					}
+				case reflect.Map:
+					if err := e.appendMapFields(sess, inlineVal, counter); err != nil {
+						return err
+					}
 				}
 			}
 			continue
@@ -865,48 +886,45 @@ func addressableStruct(rv reflect.Value) (reflect.Value, unsafe.Pointer) {
 
 func (e *Engine) appendMapStatic(sess *encoderSession, rv reflect.Value) error {
 	sess.buf = append(sess.buf, '{')
-	idx := 0
-	iter := rv.MapRange()
-	for iter.Next() {
-		name := mapKeyString(iter.Key())
-		if idx > 0 {
-			sess.buf = append(sess.buf, ',')
-		}
-		idx++
-		sess.buf = strconv.AppendQuote(sess.buf, name)
-		sess.buf = append(sess.buf, ':')
-		if err := e.appendValue(sess, iter.Value()); err != nil {
-			return err
-		}
+	counter := 0
+	if err := e.appendMapFields(sess, rv, &counter); err != nil {
+		return err
 	}
 	sess.buf = append(sess.buf, '}')
 	return nil
 }
 
 func (e *Engine) appendMapDynamic(sess *encoderSession, rv reflect.Value) error {
-	sess.buf = append(sess.buf, '{')
-	idx := 0
+	return e.appendMapStatic(sess, rv)
+}
+
+// appendMapFields shares ordinary map value/path handling with inline maps.
+// The enclosing struct keeps field order, including duplicate-key precedence.
+func (e *Engine) appendMapFields(sess *encoderSession, rv reflect.Value, counter *int) error {
 	path := e.currentPath(sess)
 	iter := rv.MapRange()
 	for iter.Next() {
 		name := mapKeyString(iter.Key())
-		if e.Exclude != nil && e.Exclude(path, name) {
+		if (e.hasTransform || e.hasExclude) && e.Exclude != nil && e.Exclude(path, name) {
 			continue
 		}
-		if idx > 0 {
+		if *counter > 0 {
 			sess.buf = append(sess.buf, ',')
 		}
-		idx++
+		*counter++
 		sess.buf = strconv.AppendQuote(sess.buf, name)
 		sess.buf = append(sess.buf, ':')
-		sess.path.push(name)
+		if e.hasTransform || e.hasExclude {
+			sess.path.push(name)
+		}
 		err := e.appendValue(sess, iter.Value())
-		sess.path.pop()
+		if e.hasTransform || e.hasExclude {
+			sess.path.pop()
+		}
 		if err != nil {
 			return err
 		}
 	}
-	sess.buf = append(sess.buf, '}')
 	return nil
 }
 
@@ -1092,8 +1110,11 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 				}
 				inlineVal = inlineVal.Elem()
 			}
-			if inlineVal.Kind() == reflect.Struct {
+			switch inlineVal.Kind() {
+			case reflect.Struct:
 				return e.appendStructFieldsStatic(sess, inlineVal, counter)
+			case reflect.Map:
+				return e.appendMapFields(sess, inlineVal, counter)
 			}
 			return nil
 		}
