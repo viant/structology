@@ -72,35 +72,9 @@ selectionLoop:
 		current := t
 		var path []string
 		for _, holder := range selection.Path {
-			fields, err := result.fields(current, cfg)
+			field, found, err := result.holderField(current, holder, cfg, path)
 			if err != nil {
 				return err
-			}
-			found := false
-			for _, field := range fields {
-				if field.Field.Name != holder {
-					continue
-				}
-				name := field.Name
-				if cfg != nil {
-					resolved := tagutil.ResolveFieldTag(field.Field.StructField())
-					name = resolved.Name
-					if tr, ok := cfg.NameTransformer.(caseFormatTransformer); ok && cfg.PathName == nil {
-						if !resolved.CaseExplicit {
-							name = tr.Transform("", name)
-						}
-					} else if !resolved.Explicit {
-						if cfg.PathName != nil {
-							name = cfg.PathName.TransformPath(path, name)
-						} else if cfg.NameTransformer != nil {
-							name = cfg.NameTransformer.Transform(strings.Join(path, "."), name)
-						}
-					}
-				}
-				path = append(path, name)
-				current = field.Field.ReflectedType
-				found = true
-				break
 			}
 			if !found {
 				// A canonical holder hidden by JSON dominance or json:"-" has
@@ -120,6 +94,8 @@ selectionLoop:
 				}
 				return fmt.Errorf("JSON selection holder %q is not exposed on %v", holder, current)
 			}
+			path = append(path, selectionWireName(field, cfg, path))
+			current = field.Field.ReflectedType
 		}
 		fields, err := result.fields(current, cfg)
 		if err != nil {
@@ -178,6 +154,166 @@ selectionLoop:
 		scope.indexes = indexes
 	}
 	return nil
+}
+
+// holderField validates only the selected ancestor. A holder can remain
+// visible to both encoders even when an unrelated sibling (for example an
+// inline map) has different static visibility in the two encoders.
+func (f *FieldFilter) holderField(t reflect.Type, name string, cfg *Options, path []string) (xshape.JSONField, bool, error) {
+	fields, err := f.fields(t, nil)
+	if err != nil {
+		return xshape.JSONField{}, false, err
+	}
+	var selected xshape.JSONField
+	count := 0
+	for _, field := range fields {
+		if field.Field.Name == name {
+			selected = field
+			count++
+		}
+	}
+	if count == 0 {
+		return xshape.JSONField{}, false, nil
+	}
+	if count != 1 {
+		return xshape.JSONField{}, false, fmt.Errorf("JSON selection holder %q is ambiguous on %v", name, t)
+	}
+	wireName := selectionWireName(selected, cfg, path)
+	for _, field := range fields {
+		if field.Field.Index == nil || reflect.DeepEqual(field.Field.Index, selected.Field.Index) {
+			continue
+		}
+		if selectionWireName(field, cfg, path) == wireName {
+			return xshape.JSONField{}, false, fmt.Errorf("JSON selection holder %q has an ambiguous wire path on %v", name, t)
+		}
+	}
+	if cfg != nil {
+		transformed, err := f.transformedWireFields(t, cfg, path, nil, map[reflect.Type]bool{})
+		if err != nil {
+			return xshape.JSONField{}, false, err
+		}
+		identityMatches, wireMatches := 0, 0
+		for _, field := range transformed {
+			if field.name == wireName {
+				wireMatches++
+				if reflect.DeepEqual(field.index, selected.Field.Index) {
+					identityMatches++
+				}
+			}
+		}
+		if identityMatches != 1 || wireMatches != 1 {
+			return xshape.JSONField{}, false, fmt.Errorf("JSON selection holder %q is not uniquely visible at the same transformed wire path on %v", name, t)
+		}
+	}
+	return selected, true, nil
+}
+
+type transformedWireField struct {
+	name  string
+	index []int
+}
+
+// transformedWireFields mirrors the static struct-field flattening used by
+// the transformed encoder. Inline maps contribute runtime keys, so they do not
+// participate in this structural holder-identity check.
+func (f *FieldFilter) transformedWireFields(t reflect.Type, cfg *Options, path []string, prefix []int, active map[reflect.Type]bool) ([]transformedWireField, error) {
+	for t != nil && (t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice || t.Kind() == reflect.Array) {
+		t = t.Elem()
+	}
+	if t == nil || t.Kind() != reflect.Struct {
+		return nil, nil
+	}
+	if active[t] {
+		return nil, fmt.Errorf("recursive inline selection on %v", t)
+	}
+	if hasWholeValueInline(t) {
+		return nil, fmt.Errorf("whole-value inline ancestor %v has no independent static holder path", t)
+	}
+	active[t] = true
+	defer delete(active, t)
+	fields, err := xshape.Linked(t).Fields()
+	if err != nil {
+		return nil, err
+	}
+	var result []transformedWireField
+	for _, field := range fields {
+		if len(field.Index) != 1 || !field.Exported || field.Tag.Get("setMarker") == "true" {
+			continue
+		}
+		tag := tagutil.ResolveFieldTag(field.StructField())
+		if tag.Ignore {
+			continue
+		}
+		index := append(append([]int(nil), prefix...), field.Index...)
+		if field.Anonymous || tag.Inline {
+			base := field.ReflectedType
+			for base != nil && base.Kind() == reflect.Pointer {
+				base = base.Elem()
+			}
+			// Inline maps are populated dynamically; their keys do not resolve
+			// canonical Go holder names.
+			if base != nil && base.Kind() == reflect.Map {
+				continue
+			}
+			nested, err := f.transformedWireFields(field.ReflectedType, cfg, path, index, active)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, nested...)
+			continue
+		}
+		wire := selectionWireName(xshape.JSONField{Field: field, Name: tag.Name}, cfg, path)
+		result = append(result, transformedWireField{name: wire, index: index})
+	}
+	return result, nil
+}
+
+// hasWholeValueInline mirrors the encoder's buildStructPlan admission rule:
+// exactly one non-anonymous inline candidate and no explicit non-inline field
+// makes the inline field replace the whole containing value.
+func hasWholeValueInline(t reflect.Type) bool {
+	if t == nil || t.Kind() != reflect.Struct {
+		return false
+	}
+	inlineCandidates := 0
+	hasExplicitNonInline := false
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if field.PkgPath != "" || field.Tag.Get("setMarker") == "true" {
+			continue
+		}
+		resolved := tagutil.ResolveFieldTag(field)
+		if resolved.Ignore {
+			continue
+		}
+		if resolved.Inline && !field.Anonymous {
+			inlineCandidates++
+		} else if resolved.Explicit {
+			hasExplicitNonInline = true
+		}
+	}
+	return inlineCandidates == 1 && !hasExplicitNonInline
+}
+
+func selectionWireName(field xshape.JSONField, cfg *Options, path []string) string {
+	name := field.Name
+	if cfg == nil {
+		return name
+	}
+	resolved := tagutil.ResolveFieldTag(field.Field.StructField())
+	name = resolved.Name
+	if tr, ok := cfg.NameTransformer.(caseFormatTransformer); ok && cfg.PathName == nil {
+		if !resolved.CaseExplicit {
+			name = tr.Transform("", name)
+		}
+	} else if !resolved.Explicit {
+		if cfg.PathName != nil {
+			name = cfg.PathName.TransformPath(path, name)
+		} else if cfg.NameTransformer != nil {
+			name = cfg.NameTransformer.Transform(strings.Join(path, "."), name)
+		}
+	}
+	return name
 }
 
 func (f *FieldFilter) fields(t reflect.Type, cfg *Options) ([]xshape.JSONField, error) {
