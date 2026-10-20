@@ -9,6 +9,35 @@ import (
 	"testing"
 )
 
+func TestMapsStorePreservesEmptyBinary(t *testing.T) {
+	type row struct {
+		Payload []byte `json:"payload"`
+	}
+	for _, input := range [][]byte{nil, {}, {0, 1, 255}} {
+		var result Maps
+		if err := result.Store([]row{{Payload: input}}); err != nil {
+			t.Fatal(err)
+		}
+		value := result[0]["payload"]
+		if input == nil {
+			if value != nil {
+				t.Fatalf("nil payload: %#v", value)
+			}
+			continue
+		}
+		actual, ok := value.([]byte)
+		if !ok || !reflect.DeepEqual(input, actual) {
+			t.Fatalf("payload=%#v, expected %#v", value, input)
+		}
+		if len(actual) > 0 {
+			actual[0] = 99
+			if input[0] != 0 {
+				t.Fatal("stored bytes alias input")
+			}
+		}
+	}
+}
+
 func TestMapsDynamicNestedRoundTrip(t *testing.T) {
 	in := Maps{
 		{"id": json.Number("9007199254740993"), "active": false, "age": nil, "profile": map[string]any{"name": "", "score": 0}, "events": []map[string]any{{"kind": "open"}, {"count": 0}}},

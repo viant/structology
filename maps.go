@@ -1,6 +1,7 @@
 package structology
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -707,8 +708,8 @@ func (p *MapPlan) storeOne(row reflect.Value) (map[string]any, error) {
 		if field.Kind() == reflect.Ptr {
 			value = field.Elem().Interface()
 		}
-		if bytes, ok := value.([]byte); ok {
-			value = append([]byte(nil), bytes...)
+		if content, ok := value.([]byte); ok {
+			value = bytes.Clone(content)
 		}
 		m[b.key] = value
 	}
