@@ -279,3 +279,30 @@ func BenchmarkMapPlanLoadStore(b *testing.B) {
 		}
 	})
 }
+
+func TestMapPlanFieldsDefensiveProjection(t *testing.T) {
+	original, err := InferMapPlan(Maps{{"name": "a", "child": map[string]any{"id": int64(1)}}, {"other": true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := original.Fields()
+	projected, err := NewMapPlan(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields[0].Key = "modified"
+	var adapted any
+	if err := projected.Load(Maps{{"child": map[string]any{"id": int64(0)}}}, &adapted); err != nil {
+		t.Fatal(err)
+	}
+	var restored Maps
+	if err := restored.Store(adapted); err != nil {
+		t.Fatal(err)
+	}
+	if len(restored[0]) != 1 || restored[0]["child"].(map[string]any)["id"] != int64(0) {
+		t.Fatal(restored)
+	}
+	if original.Fields()[0].Key == "modified" {
+		t.Fatal("schema mutated")
+	}
+}

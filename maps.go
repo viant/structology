@@ -851,3 +851,22 @@ func recordNumber(s string, t reflect.Type) (reflect.Value, error) {
 	}
 	return v, nil
 }
+
+// Fields returns a defensive schema copy suitable for selecting a physical
+// column projection. Nested descriptors retain recursive presence semantics.
+func (p *MapPlan) Fields() []MapField {
+	if p == nil {
+		return nil
+	}
+	fields := make([]MapField, len(p.fields))
+	for i, b := range p.fields {
+		f := MapField{Key: b.key, Name: p.rowType.Field(b.index).Name, Type: b.typeOf, Tag: p.rowType.Field(b.index).Tag}
+		if b.child != nil {
+			f.Fields = b.child.Fields()
+			f.Repeated = b.typeOf.Kind() == reflect.Slice
+			f.Type = nil
+		}
+		fields[i] = f
+	}
+	return fields
+}
