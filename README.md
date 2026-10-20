@@ -35,6 +35,72 @@ Markers keep models simple, make intent explicit, and integrate with path select
 
 ## Usage
 
+### Maps and struct batches
+
+`Maps` converts keyed batches to typed struct slices and back. The generated
+slice is `[]*T` behind `any`; every generated struct, including nested objects,
+has an allocated `Has` pointer tagged `setMarker:"true"`. A missing key leaves
+its flag false. A present `nil`, zero, `false`, or empty string sets the flag.
+
+```go
+input := structology.Maps{
+    {"id": int64(0), "profile": map[string]any{"name": ""}},
+    {"profile": nil},
+    {},
+}
+var generated any
+if err := input.Load(&generated); err != nil { return err }
+// generated is a real homogeneous []*T and can be passed to slice consumers.
+
+var restored structology.Maps
+if err := restored.Store(generated); err != nil { return err }
+// restored retains the missing profile, explicit null, and present zero values.
+```
+
+Supply a struct slice when its type and tags are already known:
+
+```go
+type Flags struct { ID, Name bool }
+type Row struct {
+    ID   int64  `sqlx:"id"`
+    Name string `sqlx:"name"`
+    Has  *Flags `sqlx:"-" setMarker:"true"`
+}
+var rows []*Row
+if err := (structology.Maps{{"id": int64(0)}}).Load(&rows); err != nil { return err }
+// rows[0].Has.ID is true and rows[0].Has.Name is false.
+```
+
+Compile a plan once for repeated batches or an empty batch. Inference also
+keeps a bounded cache of 64 recent schemas. Nested `Fields`
+describe an object; set `Repeated` for a slice of objects. The adapter builds
+the corresponding nested struct and markers recursively.
+
+```go
+plan, err := structology.NewMapPlan([]structology.MapField{
+    {Key: "id", Type: reflect.TypeOf(int64(0))},
+    {Key: "items", Repeated: true, Fields: []structology.MapField{
+        {Key: "name", Type: reflect.TypeOf("")},
+    }},
+})
+if err != nil { return err }
+var batch any
+if err := plan.Load(structology.Maps{{"items": []map[string]any{{"name": ""}}}}, &batch); err != nil { return err }
+```
+
+`Maps.Store` replaces its receiver only after a successful conversion. A nil
+marker on a supplied struct means all tracked fields are present, following
+the existing `Marker` convention. Inferred schemas use a sorted union of keys
+and reject mixed scalar types; schema depth is limited to 32 and each object
+to 1024 fields. Use `MapField` to specify ambiguous, empty, or
+all-null nested collections. Numeric conversions reject overflow and precision
+loss; `json.Number` stays exact during inference.
+
+The adapter reports field presence. SQL writers and native bulk loaders still
+choose their own fixed column sets. SQLX's JSON loader uses standard JSON
+serialization, which does not inspect `Has`; project through `Maps.Store` when
+the serialized output must omit absent keys.
+
 ##### Set Marker
 ```go
 type (
