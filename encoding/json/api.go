@@ -3,7 +3,6 @@ package json
 import (
 	"context"
 	"reflect"
-	"strings"
 	"time"
 	"unsafe"
 
@@ -44,31 +43,11 @@ func MarshalContext(ctx context.Context, value interface{}, opts ...Option) ([]b
 	}
 	cfg := resolveOptions(ctx, opts)
 
-	var transform func(path []string, field string) string
-	caseKey := ""
-	var compileName func(string) string
-	if cfg.PathName != nil {
-		transform = cfg.PathName.TransformPath
-	} else if tr, ok := cfg.NameTransformer.(caseFormatTransformer); ok {
-		caseKey = string(tr.caseFormat)
-		compileName = func(field string) string { return tr.Transform("", field) }
-	} else if _, ok := cfg.NameTransformer.(defaultNameTransformer); !ok && cfg.NameTransformer != nil {
-		transform = func(path []string, field string) string {
-			return cfg.NameTransformer.Transform(strings.Join(path, "."), field)
-		}
+	m := cfg.marshalEngine()
+	if err := m.ExcludeFields(reflect.TypeOf(value), cfg.ExcludedFields); err != nil {
+		return nil, err
 	}
-
-	var exclude func(path []string, field string) bool
-	if cfg.PathExcluder != nil {
-		exclude = cfg.PathExcluder.ExcludePath
-	} else if _, ok := cfg.FieldExcluder.(noExcluder); !ok && cfg.FieldExcluder != nil {
-		exclude = func(path []string, field string) bool {
-			return cfg.FieldExcluder.Exclude(strings.Join(path, "."), field)
-		}
-	}
-
-	m := jsonmarshal.New(transform, exclude, cfg.OmitEmpty, cfg.NilSlicePolicy == NilSliceAsNull, cfg.TimeLayout, caseKey, compileName)
-	if transform == nil && exclude == nil {
+	if m.NameTransform == nil && m.Exclude == nil {
 		if elemType, ptr, ok := pointerStructMeta(value); ok {
 			return m.MarshalTypedPtr(nil, elemType, ptr)
 		}

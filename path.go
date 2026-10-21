@@ -99,6 +99,9 @@ func (p paths) upstream(ptr unsafe.Pointer, options *pathOptions) (unsafe.Pointe
 		return ptr, p[0]
 	}
 	for i := 0; i < count-1; i++ {
+		if ptr == nil {
+			return nil, p[count-1]
+		}
 		ptr = p[i].pointer(ptr, options)
 		if options != nil && options.err != nil {
 			break

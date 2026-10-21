@@ -25,6 +25,7 @@ type (
 	selectorOptions struct {
 		markerOption Option
 		getNames     func(name string, tag reflect.StructTag) []string
+		active       map[reflect.Type]bool
 	}
 
 	//SelectorOption represents selector option
@@ -103,6 +104,9 @@ func (s *Selector) Value(ptr unsafe.Pointer, opts ...PathOption) interface{} {
 		options = newPathOptions(opts)
 	}
 	holderPtr, leafField := s.paths.upstream(ptr, options)
+	if holderPtr == nil {
+		return nil
+	}
 	if options != nil && options.err != nil {
 		return nil
 	}
@@ -213,7 +217,14 @@ func (s *Selector) asStringValue(ptr unsafe.Pointer, opts []PathOption) string {
 }
 
 func (s *Selector) Has(ptr unsafe.Pointer, opts ...PathOption) bool {
-	_, holderPtr, aPath := s.upstreamWithMarker(ptr, opts)
+	var options *pathOptions
+	if len(opts) > 0 {
+		options = newPathOptions(opts)
+	}
+	holderPtr, aPath := s.paths.upstream(ptr, options)
+	if holderPtr == nil || (options != nil && options.err != nil) {
+		return false
+	}
 	if aPath.marker == nil {
 		return true
 	}
@@ -352,6 +363,11 @@ func NewSelectors(owner reflect.Type, opts ...SelectorOption) (Selectors, *Marke
 
 func newSelectors(owner reflect.Type, ancestors paths, options *selectorOptions) (Selectors, *Marker) {
 	aStruct := EnsureStructType(owner)
+	if options.active == nil {
+		options.active = map[reflect.Type]bool{}
+	}
+	options.active[aStruct] = true
+	defer delete(options.active, aStruct)
 	xStruct := xunsafe.NewStruct(aStruct)
 	var marker *Marker
 	if HasSetMarker(aStruct) {
@@ -368,10 +384,9 @@ func newSelectors(owner reflect.Type, ancestors paths, options *selectorOptions)
 				fieldPath.isPtr = true
 			}
 		}
-		if structType := EnsureStructType(field.Type); structType != nil && !isTimeType(structType) && owner != structType {
-			if structType == EnsureStructType(owner) {
-				continue
-			}
+		// Keep the recursive field itself addressable, but do not eagerly
+		// expand an ancestor type again (for example Request.Response.Request).
+		if structType := EnsureStructType(field.Type); structType != nil && !isTimeType(structType) && !options.active[structType] {
 			selector.Selectors, _ = newSelectors(field.Type, selector.paths, options)
 		}
 		for _, key := range options.getNames(field.Name, field.Tag) {

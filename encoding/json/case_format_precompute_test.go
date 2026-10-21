@@ -22,6 +22,21 @@ func TestCaseFormatPrecompute_Marshal(t *testing.T) {
 	}
 }
 
+func TestCaseFormatPrecomputeWithExclusions(t *testing.T) {
+	type sample struct {
+		UserName string
+		Secret   string
+		Nick     string `json:"nickName"`
+	}
+	data, err := Marshal(sample{UserName: "alice", Secret: "private", Nick: "a"}, WithCaseFormat(text.CaseFormatLowerUnderscore), WithFieldExcluder(compatExcluder{"": {"Secret": true}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != `{"user_name":"alice","nickName":"a"}` {
+		t.Fatalf("case/exclusion output: %s", data)
+	}
+}
+
 func TestCaseFormatPrecompute_Unmarshal(t *testing.T) {
 	type sample struct {
 		UserName string

@@ -215,3 +215,10 @@ func resolveOptions(ctx context.Context, opts []Option) Options {
 	}
 	return result
 }
+
+// WithExcludedFields resolves canonical Go-field paths using the native marshal
+// plans, including field aliases, casing and inline holders.
+func WithExcludedFields(paths ...string) Option {
+	copied := append([]string(nil), paths...)
+	return optionFn(func(o *Options) { o.ExcludedFields = append([]string(nil), copied...) })
+}

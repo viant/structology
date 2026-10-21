@@ -1587,7 +1587,6 @@ func buildPlan(rType reflect.Type, compileName func(string) string) *typePlan {
 			}
 
 			name := resolved.Name
-			explicit := resolved.Explicit
 			fp := &fieldPlan{
 				name:               sf.Name,
 				xField:             xf,
@@ -1598,7 +1597,7 @@ func buildPlan(rType reflect.Type, compileName func(string) string) *typePlan {
 				resolve:            buildResolver(chain),
 			}
 			addField(name, fp)
-			if compileName != nil && !explicit {
+			if compileName != nil && !resolved.CaseExplicit {
 				alias := compileName(name)
 				if alias != "" && alias != name {
 					addField(alias, fp)

@@ -18,8 +18,9 @@ import (
 
 // Engine marshals values with transform/exclusion hooks.
 type Engine struct {
-	NameTransform func(path []string, field string) string
-	Exclude       func(path []string, field string) bool
+	fieldExclusions map[fieldLocation]bool
+	NameTransform   func(path []string, field string) string
+	Exclude         func(path []string, field string) bool
 
 	hasTransform bool
 	hasExclude   bool
@@ -38,6 +39,7 @@ type Engine struct {
 }
 
 type structPlan struct {
+	hidden    map[string]bool
 	fields    []fieldPlan
 	fastOnly  bool
 	fastOps   []fastFieldOp
@@ -46,6 +48,8 @@ type structPlan struct {
 }
 
 type fieldPlan struct {
+	custom     bool
+	owner      reflect.Type
 	fieldName  string
 	name       string
 	keyLit     []byte
@@ -591,9 +595,16 @@ func (e *Engine) appendStructStatic(sess *encoderSession, rv reflect.Value) erro
 				}
 				inlineVal = inlineVal.Elem()
 			}
-			if !skipInline && inlineVal.Kind() == reflect.Struct {
-				if err := e.appendStructFieldsStatic(sess, inlineVal, &fieldCounter); err != nil {
-					return err
+			if !skipInline {
+				switch inlineVal.Kind() {
+				case reflect.Struct:
+					if err := e.appendStructFieldsStatic(sess, inlineVal, &fieldCounter); err != nil {
+						return err
+					}
+				case reflect.Map:
+					if err := e.appendMapFields(sess, inlineVal, &fieldCounter); err != nil {
+						return err
+					}
 				}
 			}
 			continue
@@ -668,9 +679,16 @@ func (e *Engine) appendStructFieldsStatic(sess *encoderSession, rv reflect.Value
 				}
 				inlineVal = inlineVal.Elem()
 			}
-			if !skipInline && inlineVal.Kind() == reflect.Struct {
-				if err := e.appendStructFieldsStatic(sess, inlineVal, counter); err != nil {
-					return err
+			if !skipInline {
+				switch inlineVal.Kind() {
+				case reflect.Struct:
+					if err := e.appendStructFieldsStatic(sess, inlineVal, counter); err != nil {
+						return err
+					}
+				case reflect.Map:
+					if err := e.appendMapFields(sess, inlineVal, counter); err != nil {
+						return err
+					}
 				}
 			}
 			continue
@@ -763,16 +781,23 @@ func (e *Engine) appendStructFieldsDynamic(sess *encoderSession, rv reflect.Valu
 				}
 				inlineVal = inlineVal.Elem()
 			}
-			if inlineVal.IsValid() && inlineVal.Kind() == reflect.Struct {
-				inlineVal, inlinePtr := addressableStruct(inlineVal)
-				inlinePlan := e.getDynamicPlan(inlineVal.Type())
-				if err := e.appendStructFieldsDynamic(sess, inlineVal, inlinePlan, inlinePtr, counter); err != nil {
-					return err
+			if inlineVal.IsValid() {
+				switch inlineVal.Kind() {
+				case reflect.Struct:
+					inlineVal, inlinePtr := addressableStruct(inlineVal)
+					inlinePlan := e.getDynamicPlan(inlineVal.Type())
+					if err := e.appendStructFieldsDynamic(sess, inlineVal, inlinePlan, inlinePtr, counter); err != nil {
+						return err
+					}
+				case reflect.Map:
+					if err := e.appendMapFields(sess, inlineVal, counter); err != nil {
+						return err
+					}
 				}
 			}
 			continue
 		}
-		if e.hasExclude && e.Exclude(path, p.fieldName) {
+		if e.excludeField(path, *p) {
 			continue
 		}
 		name := p.name
@@ -861,48 +886,45 @@ func addressableStruct(rv reflect.Value) (reflect.Value, unsafe.Pointer) {
 
 func (e *Engine) appendMapStatic(sess *encoderSession, rv reflect.Value) error {
 	sess.buf = append(sess.buf, '{')
-	idx := 0
-	iter := rv.MapRange()
-	for iter.Next() {
-		name := mapKeyString(iter.Key())
-		if idx > 0 {
-			sess.buf = append(sess.buf, ',')
-		}
-		idx++
-		sess.buf = strconv.AppendQuote(sess.buf, name)
-		sess.buf = append(sess.buf, ':')
-		if err := e.appendValue(sess, iter.Value()); err != nil {
-			return err
-		}
+	counter := 0
+	if err := e.appendMapFields(sess, rv, &counter); err != nil {
+		return err
 	}
 	sess.buf = append(sess.buf, '}')
 	return nil
 }
 
 func (e *Engine) appendMapDynamic(sess *encoderSession, rv reflect.Value) error {
-	sess.buf = append(sess.buf, '{')
-	idx := 0
+	return e.appendMapStatic(sess, rv)
+}
+
+// appendMapFields shares ordinary map value/path handling with inline maps.
+// The enclosing struct keeps field order, including duplicate-key precedence.
+func (e *Engine) appendMapFields(sess *encoderSession, rv reflect.Value, counter *int) error {
 	path := e.currentPath(sess)
 	iter := rv.MapRange()
 	for iter.Next() {
 		name := mapKeyString(iter.Key())
-		if e.hasExclude && e.Exclude(path, name) {
+		if (e.hasTransform || e.hasExclude) && e.Exclude != nil && e.Exclude(path, name) {
 			continue
 		}
-		if idx > 0 {
+		if *counter > 0 {
 			sess.buf = append(sess.buf, ',')
 		}
-		idx++
+		*counter++
 		sess.buf = strconv.AppendQuote(sess.buf, name)
 		sess.buf = append(sess.buf, ':')
-		sess.path.push(name)
+		if e.hasTransform || e.hasExclude {
+			sess.path.push(name)
+		}
 		err := e.appendValue(sess, iter.Value())
-		sess.path.pop()
+		if e.hasTransform || e.hasExclude {
+			sess.path.pop()
+		}
 		if err != nil {
 			return err
 		}
 	}
-	sess.buf = append(sess.buf, '}')
 	return nil
 }
 
@@ -953,7 +975,7 @@ func (e *Engine) getDynamicPlan(rt reflect.Type) *structPlan {
 		return p
 	}
 	e.planMu.RUnlock()
-	plan := buildStructPlan(rt, nil, e.hasCustomMarshalerType)
+	plan := buildStructPlan(rt, e.compileName, e.hasCustomMarshalerType)
 	e.planMu.Lock()
 	if p := e.dynamicPlans[rt]; p != nil {
 		e.planMu.Unlock()
@@ -966,6 +988,7 @@ func (e *Engine) getDynamicPlan(rt reflect.Type) *structPlan {
 
 func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom func(reflect.Type) bool) *structPlan {
 	result := &structPlan{
+		hidden:    map[string]bool{},
 		fields:    make([]fieldPlan, 0, rt.NumField()),
 		fastOnly:  true,
 		fastOps:   make([]fastFieldOp, 0, rt.NumField()),
@@ -980,6 +1003,7 @@ func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom
 			continue
 		}
 		if field.Tag.Get("setMarker") == "true" {
+			result.hidden[field.Name] = true
 			continue
 		}
 		resolved := tagutil.ResolveFieldTag(field)
@@ -989,7 +1013,7 @@ func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom
 		inlineRaw := inline && (field.Type == rawMsgType || (field.Type.Kind() == reflect.Ptr && field.Type.Elem() == rawMsgType))
 		name := resolved.Name
 		explicit := resolved.Explicit
-		if compileName != nil && !explicit {
+		if compileName != nil && !resolved.CaseExplicit {
 			name = compileName(name)
 		}
 		kind := field.Type.Kind()
@@ -1001,10 +1025,13 @@ func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom
 		if fTag.Nullable {
 			fast = false
 		}
-		if hasCustom != nil && hasCustom(field.Type) {
+		custom := hasCustom != nil && hasCustom(field.Type)
+		if custom {
 			fast = false
 		}
 		fp := fieldPlan{
+			custom:     custom,
+			owner:      rt,
 			fieldName:  field.Name,
 			name:       name,
 			keyLit:     appendQuotedName(nil, name),
@@ -1083,11 +1110,18 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 				}
 				inlineVal = inlineVal.Elem()
 			}
-			if inlineVal.Kind() == reflect.Struct {
+			switch inlineVal.Kind() {
+			case reflect.Struct:
 				return e.appendStructFieldsStatic(sess, inlineVal, counter)
+			case reflect.Map:
+				return e.appendMapFields(sess, inlineVal, counter)
 			}
 			return nil
 		}
+	}
+
+	if fp.custom {
+		return compileValueFieldOp(fp)
 	}
 
 	if fp.fast {
@@ -1305,6 +1339,12 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 			}
 		}
 	}
+
+	return compileValueFieldOp(fp)
+}
+
+func compileValueFieldOp(fp fieldPlan) staticFieldOp {
+	xField, keyLit, omit := fp.xField, fp.keyLit, fp.omitempty
 
 	rType := fp.rType
 	nullable := fp.nullable
@@ -1614,16 +1654,8 @@ func primitiveEmptyFunc(kind, ptrElem reflect.Kind) func(unsafe.Pointer) bool {
 	case reflect.Float64:
 		return isEmptyFloat64Pointer
 	case reflect.Ptr:
-		inner := primitiveEmptyFunc(ptrElem, reflect.Invalid)
-		if inner == nil {
-			return nil
-		}
 		return func(ptr unsafe.Pointer) bool {
-			p := *(*unsafe.Pointer)(ptr)
-			if p == nil {
-				return true
-			}
-			return inner(p)
+			return *(*unsafe.Pointer)(ptr) == nil
 		}
 	default:
 		return nil

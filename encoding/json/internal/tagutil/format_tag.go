@@ -12,6 +12,7 @@ import (
 type FormatFieldTag struct {
 	Name          string
 	HasNameOrCase bool
+	HasCaseFormat bool
 	OmitEmpty     bool
 	Ignore        bool
 	Inline        bool
@@ -20,12 +21,15 @@ type FormatFieldTag struct {
 }
 
 type ResolvedFieldTag struct {
-	Name      string
-	Explicit  bool
-	OmitEmpty bool
-	Ignore    bool
-	Inline    bool
-	Format    FormatFieldTag
+	Name     string
+	Explicit bool
+	// CaseExplicit prevents global case formatting for JSON names and field case overrides.
+	// Explicit also includes format names, preserving inline and custom-transform behavior.
+	CaseExplicit bool
+	OmitEmpty    bool
+	Ignore       bool
+	Inline       bool
+	Format       FormatFieldTag
 }
 
 type cachedFormatTag struct {
@@ -55,6 +59,7 @@ func ParseFormatFieldTag(sf reflect.StructField, baseName string) FormatFieldTag
 	ret.OmitEmpty = cached.omitEmpty
 	ret.Ignore = cached.ignore
 	ret.Inline = cached.inline
+	ret.HasCaseFormat = cached.caseFormat != ""
 	if cached.hasNullable {
 		ret.Nullable = cached.nullable
 	}
@@ -82,6 +87,7 @@ func ParseFormatFieldTag(sf reflect.StructField, baseName string) FormatFieldTag
 // ResolveFieldTag resolves precedence among json, jsonx and format tags.
 // Precedence:
 // 1) json explicit non-empty name/transient wins over format name/case.
+// A format name remains eligible for global case formatting unless the field sets caseFormat.
 // 2) inline is enabled by anonymous or jsonx:inline or format:inline.
 // 3) ignore is enabled by json:"-" or internal:true or format:ignore.
 // 4) omitempty is enabled by json omitempty OR format omitempty.
@@ -91,17 +97,20 @@ func ResolveFieldTag(sf reflect.StructField) ResolvedFieldTag {
 
 	name := jTag.Name
 	explicit := jTag.Explicit
+	caseExplicit := jTag.Explicit
 	if !jTag.Explicit && fTag.HasNameOrCase {
 		name = fTag.Name
 		explicit = true
+		caseExplicit = fTag.HasCaseFormat
 	}
 	return ResolvedFieldTag{
-		Name:      name,
-		Explicit:  explicit,
-		OmitEmpty: jTag.OmitEmpty || fTag.OmitEmpty,
-		Ignore:    jTag.Transient || sf.Tag.Get("internal") == "true" || fTag.Ignore,
-		Inline:    sf.Anonymous || sf.Tag.Get("jsonx") == "inline" || fTag.Inline,
-		Format:    fTag,
+		Name:         name,
+		Explicit:     explicit,
+		CaseExplicit: caseExplicit,
+		OmitEmpty:    jTag.OmitEmpty || fTag.OmitEmpty,
+		Ignore:       jTag.Transient || sf.Tag.Get("internal") == "true" || fTag.Ignore,
+		Inline:       sf.Anonymous || sf.Tag.Get("jsonx") == "inline" || fTag.Inline,
+		Format:       fTag,
 	}
 }
 
