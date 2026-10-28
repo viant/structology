@@ -631,6 +631,9 @@ func (e *Engine) appendStructStatic(sess *encoderSession, rv reflect.Value) erro
 			}
 		} else {
 			fv := rv.Field(p.index)
+			if appendFormattedTimeField(sess, p, fv) {
+				continue
+			}
 			if err := e.appendValue(sess, fv); err != nil {
 				return err
 			}
@@ -715,6 +718,9 @@ func (e *Engine) appendStructFieldsStatic(sess *encoderSession, rv reflect.Value
 			}
 		} else {
 			fv := rv.Field(p.index)
+			if appendFormattedTimeField(sess, p, fv) {
+				continue
+			}
 			if err := e.appendValue(sess, fv); err != nil {
 				return err
 			}
