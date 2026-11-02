@@ -328,15 +328,19 @@ func (f *FieldFilter) fields(t reflect.Type, cfg *Options) ([]xshape.JSONField, 
 	if err = f.transformedIndexes(t, nil, native, map[reflect.Type]bool{}); err != nil {
 		return nil, err
 	}
-	if len(native) != len(fields) {
-		return nil, fmt.Errorf("field selection requires matching standard and transformed JSON field visibility on %v", t)
-	}
+	// Transformed tags may hide a standard JSON field (internal/format:ignore).
+	// Keep only the same canonical indexes that remain visible. This cannot
+	// introduce a field or change promotion; the encoder still owns exclusions.
+	visible := make([]xshape.JSONField, 0, len(fields))
 	for _, field := range fields {
-		if !native[fmt.Sprint(field.Field.Index)] {
-			return nil, fmt.Errorf("field selection requires matching standard and transformed JSON promotion on %v", t)
+		if native[fmt.Sprint(field.Field.Index)] {
+			visible = append(visible, field)
 		}
 	}
-	return fields, nil
+	if len(visible) != len(native) {
+		return nil, fmt.Errorf("field selection requires matching standard and transformed JSON promotion on %v", t)
+	}
+	return visible, nil
 }
 
 func (f *FieldFilter) ExcludePath(path []string, field string) bool {
