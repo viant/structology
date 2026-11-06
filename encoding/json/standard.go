@@ -54,5 +54,5 @@ func UnmarshalStandard(data []byte, destination any, opts ...Option) error {
 	if cfg.CaseFormat != "" || cfg.FormatTag != nil || cfg.UnknownFieldPolicy != IgnoreUnknown || cfg.NumberPolicy != CoerceNumbers || cfg.NullPolicy != CompatNulls || cfg.DuplicateKeyPolicy != LastWins || cfg.PathUnmarshalHook != nil || cfg.FieldUnmarshalHook != nil {
 		return fmt.Errorf("standard JSON decoding does not accept native decoding transforms")
 	}
-	return jsonunmarshal.NewStandardDecoder(cfg.Representation).Unmarshal(data, destination)
+	return jsonunmarshal.NewStandardDecoder(cfg.Representation).WithPresenceTracking(cfg.TrackPresence).Unmarshal(data, destination)
 }

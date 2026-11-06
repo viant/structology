@@ -234,3 +234,9 @@ func WithRepresentation(representation *shape.Representation) Option {
 		o.Representation = representation
 	})
 }
+
+// WithPresenceTracking enables native setMarker tracking for standard JSON decoding.
+// It does not replace custom JSON/Text decoder ownership.
+func WithPresenceTracking(enabled bool) Option {
+	return optionFn(func(o *Options) { o.TrackPresence = enabled })
+}

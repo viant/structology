@@ -14,13 +14,22 @@ import (
 // StandardDecoder applies optional metadata to storage selection, delegating
 // ordinary leaves and unchanged subtrees to encoding/json. It does not call the
 // native formatted decoder or reinterpret the original receiver's method set.
-type StandardDecoder struct{ representation *shape.Representation }
+type StandardDecoder struct {
+	representation *shape.Representation
+	presence       bool
+}
+
+func (d *StandardDecoder) WithPresenceTracking(enabled bool) *StandardDecoder {
+	copy := *d
+	copy.presence = enabled
+	return &copy
+}
 
 func NewStandardDecoder(metadata *shape.Representation) *StandardDecoder {
 	return &StandardDecoder{representation: metadata}
 }
 func (d *StandardDecoder) Unmarshal(data []byte, destination any) error {
-	if (d.representation == nil || !d.representation.Changed()) && !choice.HasEnum(reflect.TypeOf(destination)) {
+	if !d.presence && (d.representation == nil || !d.representation.Changed()) && !choice.HasEnum(reflect.TypeOf(destination)) {
 		return json.Unmarshal(data, destination)
 	}
 	value := reflect.ValueOf(destination)
@@ -47,10 +56,10 @@ func (d *StandardDecoder) Unmarshal(data []byte, destination any) error {
 	if err := json.Unmarshal(data, &valid); err != nil {
 		return err
 	}
-	return decodeStandardRepresentation(data, value, metadata)
+	return decodeStandardRepresentation(data, value, metadata, d.presence)
 }
-func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *shape.Representation) error {
-	if (metadata == nil || !metadata.Changed()) && !choice.HasEnum(value.Type()) {
+func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *shape.Representation, presence bool) error {
+	if hasCustomUnmarshalType(value.Type()) || (!presence && (metadata == nil || !metadata.Changed()) && !choice.HasEnum(value.Type())) {
 		return json.Unmarshal(data, value.Addr().Interface())
 	}
 	if metadata == nil {
@@ -71,7 +80,7 @@ func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *sh
 		if value.IsNil() {
 			value.Set(reflect.New(value.Type().Elem()))
 		}
-		return decodeStandardRepresentation(raw, value.Elem(), metadata.Elem())
+		return decodeStandardRepresentation(raw, value.Elem(), metadata.Elem(), presence)
 	}
 	switch value.Kind() {
 	case reflect.Struct:
@@ -116,6 +125,9 @@ func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *sh
 				continue
 			}
 			field := fields[index]
+			if field.Field.Tag.Get("setMarker") == "true" {
+				continue
+			}
 			target, err := standardFieldValue(value, field.Field.Index)
 			if err != nil {
 				return err
@@ -136,7 +148,7 @@ func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *sh
 			} else if field.Quoted {
 				err = decodeStandardQuoted(member, target)
 			} else {
-				err = decodeStandardRepresentation(member, target, metadata.FieldShapeByIndex(field.Field.Index))
+				err = decodeStandardRepresentation(member, target, metadata.FieldShapeByIndex(field.Field.Index), presence)
 			}
 			if err != nil {
 				if hasCustomUnmarshalType(target.Type()) {
@@ -157,6 +169,9 @@ func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *sh
 				}
 				return err
 			}
+			if presence {
+				markStandardPresence(value, field.Field.Index)
+			}
 		}
 		return first
 	case reflect.Slice, reflect.Array:
@@ -176,7 +191,7 @@ func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *sh
 				value.Grow(i + 1 - value.Len())
 				value.SetLen(i + 1)
 			}
-			if err := decodeStandardRepresentation(member, value.Index(i), metadata.Elem()); err != nil {
+			if err := decodeStandardRepresentation(member, value.Index(i), metadata.Elem(), presence); err != nil {
 				if _, ok := err.(*json.UnmarshalTypeError); !ok {
 					return err
 				}
@@ -233,7 +248,7 @@ func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *sh
 			}
 			key := keyMap.Elem().MapKeys()[0]
 			element := reflect.New(value.Type().Elem()).Elem()
-			err = decodeStandardRepresentation(member, element, metadata.Elem())
+			err = decodeStandardRepresentation(member, element, metadata.Elem(), presence)
 			if err != nil {
 				if _, ok := err.(*json.UnmarshalTypeError); !ok {
 					return err
@@ -278,4 +293,53 @@ func decodeStandardQuoted(raw []byte, value reflect.Value) error {
 	err := json.Unmarshal(object, target.Interface())
 	value.Set(target.Elem().Field(0))
 	return err
+}
+
+func markStandardPresence(value reflect.Value, index []int) {
+	leaf := value.Type().FieldByIndex(index).Name
+	for depth, position := range index {
+		for value.Kind() == reflect.Pointer {
+			if value.IsNil() {
+				return
+			}
+			value = value.Elem()
+		}
+		if value.Kind() != reflect.Struct {
+			return
+		}
+		for i := 0; i < value.NumField(); i++ {
+			field := value.Type().Field(i)
+			if field.Tag.Get("setMarker") != "true" {
+				continue
+			}
+			holder := value.Field(i)
+			if !holder.CanSet() {
+				continue
+			}
+			typ := holder.Type()
+			if typ.Kind() == reflect.Pointer {
+				typ = typ.Elem()
+			}
+			if typ.Kind() != reflect.Struct {
+				continue
+			}
+			flag, ok := typ.FieldByName(leaf)
+			if !ok || flag.Type.Kind() != reflect.Bool {
+				continue
+			}
+			if holder.Kind() == reflect.Pointer {
+				if holder.IsNil() {
+					holder.Set(reflect.New(typ))
+				}
+				holder = holder.Elem()
+			}
+			selected := holder.FieldByIndex(flag.Index)
+			if selected.CanSet() {
+				selected.SetBool(true)
+			}
+		}
+		if depth+1 < len(index) {
+			value = value.Field(position)
+		}
+	}
 }

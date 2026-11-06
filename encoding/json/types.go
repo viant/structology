@@ -161,6 +161,8 @@ type Option interface{ apply(*Options) }
 type Options struct {
 	// Representation is opt-in metadata over the original linked storage type.
 	Representation *shape.Representation
+	// TrackPresence opts the standard decoder into setMarker tracking.
+	TrackPresence bool
 	// ExcludedFields contains canonical Go-field paths for marshal projection.
 	ExcludedFields []string
 	Ctx            context.Context
