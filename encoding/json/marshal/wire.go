@@ -2,6 +2,7 @@ package marshal
 
 import (
 	"fmt"
+	"github.com/viant/tagly/choice"
 	xshape "github.com/viant/x/shape"
 	"reflect"
 	"strings"
@@ -196,6 +197,17 @@ func (c *wireCompiler) fields(target *WireShape, plan *structPlan, path []string
 		item, err := c.value(field.rType, childPath, field.representation)
 		if err != nil {
 			return fmt.Errorf("field %s: %w", field.fieldName, err)
+		}
+		enumeration, e := choice.ParseEnum(field.metadata.Tag, field.rType)
+		if e != nil {
+			return e
+		}
+		if enumeration != nil {
+			kind := reflect.Int64
+			if enumeration.WireType(false) == "string" {
+				kind = reflect.String
+			}
+			item = &WireShape{source: field.rType, kind: kind, nullable: field.rType.Kind() == reflect.Pointer, length: -1}
 		}
 		if isTimeTypeOrPtr(field.rType) {
 			layout := c.engine.timeLayout

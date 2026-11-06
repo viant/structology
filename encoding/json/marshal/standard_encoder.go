@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/viant/tagly/choice"
 	xshape "github.com/viant/x/shape"
 )
 
@@ -34,7 +35,8 @@ func (e *StandardEncoder) WithRepresentation(representation *xshape.Representati
 
 type standardField struct {
 	xshape.JSONField
-	key []byte
+	key         []byte
+	enumeration *choice.Enum
 }
 type standardFields struct {
 	fields []standardField
@@ -44,7 +46,7 @@ type standardFields struct {
 var standardFieldCache sync.Map
 
 func (e *StandardEncoder) Marshal(value any) ([]byte, error) {
-	if e.exclude == nil && (e.representation == nil || !e.representation.Changed()) {
+	if e.exclude == nil && (e.representation == nil || !e.representation.Changed()) && !choice.HasEnum(reflect.TypeOf(value)) {
 		return json.Marshal(value)
 	}
 	if e.representation != nil && value != nil {
@@ -126,7 +128,16 @@ func (s *standardEncoding) append(dst []byte, v reflect.Value, path []string, de
 			compiled := make([]standardField, len(fields))
 			for i, field := range fields {
 				key, _ := json.Marshal(field.Name)
-				compiled[i] = standardField{field, key}
+				enumeration, e := choice.ParseEnum(field.Field.Tag, field.Field.ReflectedType)
+				if e != nil {
+					err = e
+					break
+				}
+				if enumeration != nil && field.Quoted {
+					err = fmt.Errorf("enumStyle conflicts with json string option")
+					break
+				}
+				compiled[i] = standardField{JSONField: field, key: key, enumeration: enumeration}
 			}
 			entry, _ = cache.LoadOrStore(key, standardFields{compiled, err})
 		}
@@ -159,6 +170,18 @@ func (s *standardEncoding) append(dst []byte, v reflect.Value, path []string, de
 			count++
 			dst = append(dst, field.key...)
 			dst = append(dst, ':')
+			if field.enumeration != nil {
+				wire, err := field.enumeration.Encode(fv.Interface())
+				if err != nil {
+					return nil, err
+				}
+				encoded, err := json.Marshal(wire)
+				if err != nil {
+					return nil, err
+				}
+				dst = append(dst, encoded...)
+				continue
+			}
 			quoted := field.Quoted
 			if quoted {
 				_, opaque := s.custom(fv)
@@ -209,10 +232,14 @@ func (s *standardEncoding) append(dst []byte, v reflect.Value, path []string, de
 		}
 		return append(dst, ']'), nil
 	case reflect.Map:
-		if representation == nil || v.IsNil() {
+		if (representation == nil && !choice.HasEnum(v.Type())) || v.IsNil() {
 			return s.scalar(dst, v)
 		}
-		return s.appendMap(dst, v, path, depth, representation.Elem())
+		var child *xshape.Representation
+		if representation != nil {
+			child = representation.Elem()
+		}
+		return s.appendMap(dst, v, path, depth, child)
 	default:
 		return s.scalar(dst, v)
 	}

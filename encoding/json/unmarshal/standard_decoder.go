@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/viant/tagly/choice"
 	"github.com/viant/x/shape"
 )
 
@@ -19,7 +20,7 @@ func NewStandardDecoder(metadata *shape.Representation) *StandardDecoder {
 	return &StandardDecoder{representation: metadata}
 }
 func (d *StandardDecoder) Unmarshal(data []byte, destination any) error {
-	if d.representation == nil || !d.representation.Changed() {
+	if (d.representation == nil || !d.representation.Changed()) && !choice.HasEnum(reflect.TypeOf(destination)) {
 		return json.Unmarshal(data, destination)
 	}
 	value := reflect.ValueOf(destination)
@@ -27,19 +28,40 @@ func (d *StandardDecoder) Unmarshal(data []byte, destination any) error {
 		return &json.InvalidUnmarshalError{Type: reflect.TypeOf(destination)}
 	}
 	value = value.Elem()
-	if value.Type() != d.representation.Original() {
-		return fmt.Errorf("representation expects destination *%s, got %T", d.representation.Original(), destination)
+	metadata := d.representation
+	if metadata == nil {
+		plan, err := shape.CompileRewrite(value.Type())
+		if err != nil {
+			return err
+		}
+		metadata, err = plan.RewriteRepresentation(nil)
+		if err != nil {
+			return err
+		}
+	}
+	if value.Type() != metadata.Original() {
+		return fmt.Errorf("representation expects destination *%s, got %T", metadata.Original(), destination)
 	}
 	// Match encoding/json's syntax-before-mutation behavior, including discarded fields.
 	var valid json.RawMessage
 	if err := json.Unmarshal(data, &valid); err != nil {
 		return err
 	}
-	return decodeStandardRepresentation(data, value, d.representation)
+	return decodeStandardRepresentation(data, value, metadata)
 }
 func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *shape.Representation) error {
-	if metadata == nil || !metadata.Changed() {
+	if (metadata == nil || !metadata.Changed()) && !choice.HasEnum(value.Type()) {
 		return json.Unmarshal(data, value.Addr().Interface())
+	}
+	if metadata == nil {
+		plan, err := shape.CompileRewrite(value.Type())
+		if err != nil {
+			return err
+		}
+		metadata, err = plan.RewriteRepresentation(nil)
+		if err != nil {
+			return err
+		}
 	}
 	raw := bytes.TrimSpace(data)
 	if bytes.Equal(raw, []byte("null")) {
@@ -98,7 +120,20 @@ func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *sh
 			if err != nil {
 				return err
 			}
-			if field.Quoted {
+			enumeration, e := choice.ParseEnum(field.Field.Tag, field.Field.ReflectedType)
+			if e != nil {
+				return e
+			}
+			if enumeration != nil {
+				if field.Quoted {
+					return fmt.Errorf("enumAccept conflicts with json string option")
+				}
+				converted, e := enumeration.DecodeJSON(member)
+				if e != nil {
+					return e
+				}
+				err = json.Unmarshal(converted, target.Addr().Interface())
+			} else if field.Quoted {
 				err = decodeStandardQuoted(member, target)
 			} else {
 				err = decodeStandardRepresentation(member, target, metadata.FieldShapeByIndex(field.Field.Index))

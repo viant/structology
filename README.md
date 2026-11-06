@@ -291,3 +291,13 @@ It is supported by `Marshal`, `MarshalStandard`, `NewMarshaller`, `Unmarshal` an
 `UnmarshalStandard` delegates ordinary leaves and unchanged subtrees to encoding/json;
 formatted/native policies remain owned by `Unmarshal`. Complete custom JSON/Text
 methods retain their own representation and cannot be rewritten internally.
+
+## Enum JSON conversion
+
+Repeated `choice` tags support bare literals (zero-based positions) and explicit
+`ordinal:literal` pairs. `enumAccept:"literal"` or `enumAccept:"ordinal"` selects one
+JSON input representation; `enumStyle` independently selects output. Each defaults
+to the Go storage type: integer => ordinal, string => literal. Native JSON and the
+standard-compatible wrappers support conversion without changing storage types.
+Direct encoding/json calls ignore these tags. Existing numeric choice domains are
+retained, and unknown conversions fail rather than inventing a code or label.

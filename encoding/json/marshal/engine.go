@@ -13,6 +13,7 @@ import (
 
 	"github.com/francoispqt/gojay"
 	"github.com/viant/structology/encoding/json/internal/tagutil"
+	"github.com/viant/tagly/choice"
 	xshape "github.com/viant/x/shape"
 	"github.com/viant/xunsafe"
 )
@@ -1146,6 +1147,28 @@ func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom
 			appendFn:       primitiveAppendFunc(kind, ptrElem),
 			emptyFn:        primitiveEmptyFunc(kind, ptrElem),
 		}
+
+		enumeration, enumErr := choice.ParseEnum(field.Tag, field.Type)
+		if enumeration != nil || enumErr != nil {
+			result.fastOnly = false
+			fast = true
+			fp.fast = true
+			fp.appendFn = func(dst *[]byte, ptr unsafe.Pointer) error {
+				if enumErr != nil {
+					return enumErr
+				}
+				wire, err := enumeration.Encode(reflect.NewAt(field.Type, ptr).Elem().Interface())
+				if err != nil {
+					return err
+				}
+				raw, err := stdjson.Marshal(wire)
+				if err != nil {
+					return err
+				}
+				*dst = append(*dst, raw...)
+				return nil
+			}
+		}
 		result.fields = append(result.fields, fp)
 		if !ignore {
 			if fp.inline && !fp.anonymous {
@@ -1153,7 +1176,7 @@ func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom
 			} else if explicit {
 				hasExplicitNonInline = true
 			}
-			if !fast || inline || field.Anonymous {
+			if !fast || inline || field.Anonymous || fp.nullable {
 				result.fastOnly = false
 			} else {
 				result.fastOps = append(result.fastOps, fastFieldOp{

@@ -4,6 +4,8 @@ import (
 	"context"
 	stdjson "encoding/json"
 	"fmt"
+	"github.com/viant/tagly/choice"
+	"reflect"
 	"strings"
 
 	jsonmarshal "github.com/viant/structology/encoding/json/marshal"
@@ -14,7 +16,7 @@ import (
 // field dominance, tags and value encoding. Custom value encoders own their
 // complete value. Formatting transforms belong to MarshalContext instead.
 func MarshalStandard(value any, opts ...Option) ([]byte, error) {
-	if len(opts) == 0 {
+	if len(opts) == 0 && !choice.HasEnum(reflect.TypeOf(value)) {
 		return stdjson.Marshal(value)
 	}
 	cfg := resolveOptions(context.Background(), opts)
@@ -45,7 +47,7 @@ type IndexedPathFieldExcluder interface {
 // UnmarshalStandard keeps encoding/json decoding while opting into effective
 // field metadata. Formatting and native decoder policies belong to Unmarshal.
 func UnmarshalStandard(data []byte, destination any, opts ...Option) error {
-	if len(opts) == 0 {
+	if len(opts) == 0 && !choice.HasEnum(reflect.TypeOf(destination)) {
 		return stdjson.Unmarshal(data, destination)
 	}
 	cfg := resolveOptions(context.Background(), opts)

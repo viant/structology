@@ -16,6 +16,7 @@ import (
 
 	"github.com/viant/structology/encoding/json/internal/lru"
 	"github.com/viant/structology/encoding/json/internal/tagutil"
+	"github.com/viant/tagly/choice"
 	ftime "github.com/viant/tagly/format/time"
 	xshape "github.com/viant/x/shape"
 	"github.com/viant/xunsafe"
@@ -266,7 +267,39 @@ func (e *Engine) unmarshalStructFromDecoder(d *scalarDecoder, structPtr unsafe.P
 			hooksEnabled := e.PathHook != nil
 			customUnmarshal := fp.hasCustomUnmarshal && !isTimeTypeOrPtr(fp.rType)
 			streamNested := fp.rType.Kind() == reflect.Struct || (fp.rType.Kind() == reflect.Ptr && fp.rType.Elem().Kind() == reflect.Struct)
-			if hooksEnabled && streamNested && !customUnmarshal {
+			if fp.enumeration != nil || fp.enumErr != nil {
+				if fp.enumErr != nil {
+					return fp.enumErr
+				}
+				start := d.pos
+				if err = d.skipRawValue(); err != nil {
+					return err
+				}
+				raw := d.data[start:d.pos]
+				if e.PathHook != nil {
+					var input any
+					decoder := stdjson.NewDecoder(bytes.NewReader(raw))
+					decoder.UseNumber()
+					if err = decoder.Decode(&input); err != nil {
+						return err
+					}
+					input, err = e.PathHook(e.Ctx, structPtr, d.path, fp.name, input)
+					if err != nil {
+						return err
+					}
+					raw, err = stdjson.Marshal(input)
+					if err != nil {
+						return err
+					}
+				}
+				converted, err := fp.enumeration.DecodeJSON(raw)
+				if err != nil {
+					return wrapPathError(key, err)
+				}
+				if err = stdjson.Unmarshal(converted, reflect.NewAt(fp.rType, fieldPtr).Interface()); err != nil {
+					return wrapPathError(key, err)
+				}
+			} else if hooksEnabled && streamNested && !customUnmarshal {
 				if handled, decodeErr := e.tryDecodeTypedField(d, fp, fieldPtr); handled {
 					if pathPushed && len(d.path) > 0 {
 						d.path = d.path[:len(d.path)-1]
@@ -1503,6 +1536,8 @@ type foldField struct {
 }
 
 type fieldPlan struct {
+	enumeration        *choice.Enum
+	enumErr            error
 	representation     *xshape.Representation
 	name               string
 	xField             *xunsafe.Field
@@ -1643,6 +1678,7 @@ func buildPlan(rType reflect.Type, compileName func(string) string, representati
 				hasCustomUnmarshal: hasCustomUnmarshalType(sf.Type),
 				resolve:            buildResolver(chain),
 			}
+			fp.enumeration, fp.enumErr = choice.ParseEnum(sf.Tag, sf.Type)
 			addField(name, fp)
 			if compileName != nil && !resolved.CaseExplicit {
 				alias := compileName(name)
@@ -1709,6 +1745,20 @@ func assignParsed(dest interface{}, parsed interface{}, e *Engine) error {
 }
 
 func (e *Engine) assignPlannedField(ptr unsafe.Pointer, fp *fieldPlan, parsed interface{}) error {
+	if fp.enumErr != nil {
+		return fp.enumErr
+	}
+	if fp.enumeration != nil {
+		raw, err := stdjson.Marshal(parsed)
+		if err != nil {
+			return err
+		}
+		converted, err := fp.enumeration.DecodeJSON(raw)
+		if err != nil {
+			return err
+		}
+		return stdjson.Unmarshal(converted, reflect.NewAt(fp.rType, ptr).Interface())
+	}
 	if fp != nil && fp.timeLayout != "" {
 		if handled, err := assignTimeWithLayout(ptr, fp.rType, parsed, fp.timeLayout, e.NullPolicy); handled {
 			return err

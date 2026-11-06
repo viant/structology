@@ -4,6 +4,7 @@ import (
 	"encoding"
 	stdjson "encoding/json"
 	"fmt"
+	"github.com/viant/tagly/choice"
 	"reflect"
 	"sync"
 	"time"
@@ -106,6 +107,20 @@ func (c *standardCompiler) value(t reflect.Type, representation *xshape.Represen
 			property, err := c.value(field.Field.ReflectedType, fieldShape)
 			if err != nil {
 				return nil, fmt.Errorf("field %s: %w", field.Name, err)
+			}
+			enumeration, e := choice.ParseEnum(field.Field.Tag, field.Field.ReflectedType)
+			if e != nil {
+				return nil, e
+			}
+			if enumeration != nil {
+				if field.Quoted {
+					return nil, fmt.Errorf("enumStyle conflicts with quoted JSON")
+				}
+				kind := reflect.Int64
+				if enumeration.WireType(false) == "string" {
+					kind = reflect.String
+				}
+				property = &WireShape{source: field.Field.ReflectedType, kind: kind, nullable: field.Field.ReflectedType.Kind() == reflect.Pointer, length: -1}
 			}
 			if (field.Quoted || standardQuotedNamedPointer(field.Field.ReflectedType, field.Field.Tag)) && !hasStandardWireMarshaler(field.Field.ReflectedType) {
 				property = &WireShape{source: field.Field.ReflectedType, kind: reflect.String, nullable: field.Field.ReflectedType.Kind() == reflect.Pointer, length: -1}
