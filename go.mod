@@ -20,7 +20,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/viant/parsly v0.3.3 // indirect
-	github.com/viant/x v0.4.1-0.20260914174450-0e043f24aec5
+	github.com/viant/x v0.6.1-0.20261106041415-0487ec66884b
 	golang.org/x/mod v0.28.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
