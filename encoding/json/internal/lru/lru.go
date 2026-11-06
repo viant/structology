@@ -42,6 +42,10 @@ func (c *Cache[K, V]) Get(key K) (V, bool) {
 func (c *Cache[K, V]) Set(key K, value V) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.setLocked(key, value)
+}
+
+func (c *Cache[K, V]) setLocked(key K, value V) {
 	if elem, ok := c.items[key]; ok {
 		elem.Value = entry[K, V]{key: key, value: value}
 		c.order.MoveToFront(elem)
@@ -57,4 +61,17 @@ func (c *Cache[K, V]) Set(key K, value V) {
 			delete(c.items, kv.key)
 		}
 	}
+}
+
+// GetOrCreate coalesces misses. create must not reenter this cache.
+func (c *Cache[K, V]) GetOrCreate(key K, create func() V) V {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if element, ok := c.items[key]; ok {
+		c.order.MoveToFront(element)
+		return element.Value.(entry[K, V]).value
+	}
+	value := create()
+	c.setLocked(key, value)
+	return value
 }

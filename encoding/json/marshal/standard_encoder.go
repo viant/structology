@@ -4,10 +4,10 @@ import (
 	"encoding"
 	"encoding/json"
 	"fmt"
+	"github.com/viant/structology/encoding/json/internal/lru"
 	"reflect"
 	"sort"
 	"strconv"
-	"sync"
 
 	"github.com/viant/tagly/choice"
 	xshape "github.com/viant/x/shape"
@@ -17,10 +17,9 @@ import (
 // opaque custom and map values are delegated to encoding/json. Object field
 // authority is x/shape.JSONFields, including JSON-specific promotion dominance.
 type StandardEncoder struct {
-	representation       *xshape.Representation
-	representationFields sync.Map
-	exclude              func([]string, string) bool
-	excludeIndex         func([]string, []int) bool
+	representation *xshape.Representation
+	exclude        func([]string, string) bool
+	excludeIndex   func([]string, []int) bool
 }
 
 func NewStandardEncoder(exclude func([]string, string) bool, excludeIndex func([]string, []int) bool) *StandardEncoder {
@@ -30,6 +29,9 @@ func NewStandardEncoder(exclude func([]string, string) bool, excludeIndex func([
 // WithRepresentation returns an independent encoder over canonical storage.
 // The immutable metadata object is also the field-plan cache identity.
 func (e *StandardEncoder) WithRepresentation(representation *xshape.Representation) *StandardEncoder {
+	if representation != nil && !representation.Changed() {
+		representation = nil
+	}
 	return &StandardEncoder{exclude: e.exclude, excludeIndex: e.excludeIndex, representation: representation}
 }
 
@@ -43,7 +45,42 @@ type standardFields struct {
 	err    error
 }
 
-var standardFieldCache sync.Map
+type standardFieldsKey struct {
+	typ            reflect.Type
+	representation *xshape.Representation
+}
+
+var standardFieldCache = lru.New[standardFieldsKey, *standardFields](2048)
+
+func standardFieldsFor(typ reflect.Type, representation *xshape.Representation) *standardFields {
+	if representation != nil && !representation.Changed() {
+		representation = nil
+	}
+	return standardFieldCache.GetOrCreate(standardFieldsKey{typ, representation}, func() *standardFields {
+		var fields []xshape.JSONField
+		var err error
+		if representation != nil {
+			fields, err = representation.JSONFields()
+		} else {
+			fields, err = xshape.Linked(typ).JSONFields()
+		}
+		compiled := make([]standardField, len(fields))
+		for i, field := range fields {
+			key, _ := json.Marshal(field.Name)
+			enumeration, e := choice.ParseEnum(field.Field.Tag, field.Field.ReflectedType)
+			if e != nil {
+				err = e
+				break
+			}
+			if enumeration != nil && field.Quoted {
+				err = fmt.Errorf("enumStyle conflicts with json string option")
+				break
+			}
+			compiled[i] = standardField{JSONField: field, key: key, enumeration: enumeration}
+		}
+		return &standardFields{compiled, err}
+	})
+}
 
 func (e *StandardEncoder) Marshal(value any) ([]byte, error) {
 	if e.exclude == nil && (e.representation == nil || !e.representation.Changed()) && !choice.HasEnum(reflect.TypeOf(value)) {
@@ -110,38 +147,7 @@ func (s *standardEncoding) append(dst []byte, v reflect.Value, path []string, de
 		}
 		return s.append(dst, v.Elem(), path, depth+1, representation)
 	case reflect.Struct:
-		cache := &standardFieldCache
-		var key any = v.Type()
-		if representation != nil {
-			cache = &s.encoder.representationFields
-			key = representation
-		}
-		entry, ok := cache.Load(key)
-		if !ok {
-			var fields []xshape.JSONField
-			var err error
-			if representation != nil {
-				fields, err = representation.JSONFields()
-			} else {
-				fields, err = xshape.Linked(v.Type()).JSONFields()
-			}
-			compiled := make([]standardField, len(fields))
-			for i, field := range fields {
-				key, _ := json.Marshal(field.Name)
-				enumeration, e := choice.ParseEnum(field.Field.Tag, field.Field.ReflectedType)
-				if e != nil {
-					err = e
-					break
-				}
-				if enumeration != nil && field.Quoted {
-					err = fmt.Errorf("enumStyle conflicts with json string option")
-					break
-				}
-				compiled[i] = standardField{JSONField: field, key: key, enumeration: enumeration}
-			}
-			entry, _ = cache.LoadOrStore(key, standardFields{compiled, err})
-		}
-		fields := entry.(standardFields)
+		fields := standardFieldsFor(v.Type(), representation)
 		if fields.err != nil {
 			return nil, fields.err
 		}

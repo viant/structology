@@ -12,6 +12,7 @@ import (
 	"unsafe"
 
 	"github.com/francoispqt/gojay"
+	"github.com/viant/structology/encoding/json/internal/lru"
 	"github.com/viant/structology/encoding/json/internal/tagutil"
 	"github.com/viant/tagly/choice"
 	xshape "github.com/viant/x/shape"
@@ -33,9 +34,7 @@ type Engine struct {
 	caseKey      string
 	compileName  func(string) string
 
-	planMu       sync.RWMutex
-	staticPlans  map[any]*structPlan
-	dynamicPlans map[any]*structPlan
+	plans *lru.Cache[structPlanKey, *structPlan]
 
 	customMu    sync.RWMutex
 	customTypes map[reflect.Type]bool
@@ -113,6 +112,10 @@ func New(nameTransform func(path []string, field string) string, exclude func(pa
 	if timeLayout == "" {
 		timeLayout = time.RFC3339
 	}
+	plans := sharedStructPlans
+	if compileName != nil {
+		plans = lru.New[structPlanKey, *structPlan](2048)
+	}
 	return &Engine{
 		NameTransform: nameTransform,
 		Exclude:       exclude,
@@ -123,18 +126,21 @@ func New(nameTransform func(path []string, field string) string, exclude func(pa
 		timeLayout:    timeLayout,
 		caseKey:       caseKey,
 		compileName:   compileName,
-		staticPlans:   map[any]*structPlan{},
-		dynamicPlans:  map[any]*structPlan{},
+		plans:         plans,
 		customTypes:   map[reflect.Type]bool{},
 	}
 }
 
 // WithRepresentation opts into effective field metadata over canonical storage.
 func (e *Engine) WithRepresentation(r *xshape.Representation) *Engine {
-	if r == nil || !r.Changed() {
+	if r != nil && !r.Changed() {
+		r = nil
+	}
+	if e.representation == r {
 		return e
 	}
 	result := New(e.NameTransform, e.Exclude, e.omitEmpty, e.nilSliceNull, e.timeLayout, e.caseKey, e.compileName)
+	result.plans = e.plans
 	result.fieldExclusions = e.fieldExclusions
 	result.representation = r
 	return result
@@ -1026,50 +1032,23 @@ func structPointer(rv reflect.Value, rt reflect.Type) unsafe.Pointer {
 	return unsafe.Pointer(tmp.Pointer())
 }
 
-func (e *Engine) getStaticPlan(rt reflect.Type, representations ...*xshape.Representation) *structPlan {
-	representation := representationForType(selectedRepresentation(representations), rt)
-	var key any = rt
-	if representation != nil {
-		key = representation
-	}
-	e.planMu.RLock()
-	if p := e.staticPlans[key]; p != nil {
-		e.planMu.RUnlock()
-		return p
-	}
-	e.planMu.RUnlock()
-	plan := buildStructPlan(rt, e.compileName, e.hasCustomMarshalerType, representation)
-	e.planMu.Lock()
-	if p := e.staticPlans[key]; p != nil {
-		e.planMu.Unlock()
-		return p
-	}
-	e.staticPlans[key] = plan
-	e.planMu.Unlock()
-	return plan
+type structPlanKey struct {
+	typ            reflect.Type
+	representation *xshape.Representation
 }
 
-func (e *Engine) getDynamicPlan(rt reflect.Type, representations ...*xshape.Representation) *structPlan {
+// Plans contain only immutable type/field metadata. Runtime transforms and
+// exclusions stay on the engine and are never retained by this shared cache.
+var sharedStructPlans = lru.New[structPlanKey, *structPlan](2048)
+
+func (e *Engine) getStaticPlan(rt reflect.Type, representations ...*xshape.Representation) *structPlan {
 	representation := representationForType(selectedRepresentation(representations), rt)
-	var key any = rt
-	if representation != nil {
-		key = representation
-	}
-	e.planMu.RLock()
-	if p := e.dynamicPlans[key]; p != nil {
-		e.planMu.RUnlock()
-		return p
-	}
-	e.planMu.RUnlock()
-	plan := buildStructPlan(rt, e.compileName, e.hasCustomMarshalerType, representation)
-	e.planMu.Lock()
-	if p := e.dynamicPlans[key]; p != nil {
-		e.planMu.Unlock()
-		return p
-	}
-	e.dynamicPlans[key] = plan
-	e.planMu.Unlock()
-	return plan
+	return e.plans.GetOrCreate(structPlanKey{rt, representation}, func() *structPlan {
+		return buildStructPlan(rt, e.compileName, e.hasCustomMarshalerType, representation)
+	})
+}
+func (e *Engine) getDynamicPlan(rt reflect.Type, representations ...*xshape.Representation) *structPlan {
+	return e.getStaticPlan(rt, representations...)
 }
 
 func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom func(reflect.Type) bool, representations ...*xshape.Representation) *structPlan {

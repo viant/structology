@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/viant/structology/encoding/json/internal/lru"
 	"github.com/viant/tagly/choice"
 	"github.com/viant/x/shape"
 )
@@ -87,10 +88,12 @@ func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *sh
 		if len(raw) == 0 || raw[0] != '{' {
 			return json.Unmarshal(raw, value.Addr().Interface())
 		}
-		fields, err := metadata.JSONFields()
-		if err != nil {
-			return err
+		plan := standardDecodePlanFor(value.Type(), metadata)
+		if plan.err != nil {
+			return plan.err
 		}
+		fields := plan.fields
+		var err error
 		decoder := json.NewDecoder(bytes.NewReader(raw))
 		if _, err = decoder.Token(); err != nil {
 			return err
@@ -132,10 +135,10 @@ func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *sh
 			if err != nil {
 				return err
 			}
-			enumeration, e := choice.ParseEnum(field.Field.Tag, field.Field.ReflectedType)
-			if e != nil {
-				return e
+			if err := plan.enumErrors[index]; err != nil {
+				return err
 			}
+			enumeration := plan.enums[index]
 			if enumeration != nil {
 				if field.Quoted {
 					return fmt.Errorf("enumAccept conflicts with json string option")
@@ -342,4 +345,40 @@ func markStandardPresence(value reflect.Value, index []int) {
 			value = value.Field(position)
 		}
 	}
+}
+
+type standardDecodeKey struct {
+	typ            reflect.Type
+	representation *shape.Representation
+}
+type standardDecodePlan struct {
+	fields     []shape.JSONField
+	enums      []*choice.Enum
+	enumErrors []error
+	err        error
+}
+
+var standardDecodeCache = lru.New[standardDecodeKey, *standardDecodePlan](2048)
+
+func standardDecodePlanFor(typ reflect.Type, metadata *shape.Representation) *standardDecodePlan {
+	if metadata != nil && !metadata.Changed() {
+		metadata = nil
+	}
+	return standardDecodeCache.GetOrCreate(standardDecodeKey{typ, metadata}, func() *standardDecodePlan {
+		result := &standardDecodePlan{}
+		if metadata != nil {
+			result.fields, result.err = metadata.JSONFields()
+		} else {
+			result.fields, result.err = shape.Linked(typ).JSONFields()
+		}
+		if result.err != nil {
+			return result
+		}
+		result.enums = make([]*choice.Enum, len(result.fields))
+		result.enumErrors = make([]error, len(result.fields))
+		for i, field := range result.fields {
+			result.enums[i], result.enumErrors[i] = choice.ParseEnum(field.Field.Tag, field.Field.ReflectedType)
+		}
+		return result
+	})
 }

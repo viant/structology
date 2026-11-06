@@ -112,7 +112,10 @@ func New(ctx context.Context, hooks ScannerHooks, unknown UnknownFieldPolicy, nu
 // WithRepresentation retains canonical instances while supplying effective
 // field metadata to the existing decoder plans and presence mapping.
 func (e *Engine) WithRepresentation(r *xshape.Representation) *Engine {
-	if r == nil || !r.Changed() {
+	if r != nil && !r.Changed() {
+		r = nil
+	}
+	if e.representation == r {
 		return e
 	}
 	copy := *e
@@ -1569,12 +1572,7 @@ func planFor(rType reflect.Type, caseKey string, compileName func(string) string
 	}
 	representation = representationFor(representation, rType)
 	key := planCacheKey{rType: rType, caseKey: caseKey, representation: representation}
-	if v, ok := planCache.Get(key); ok {
-		return v
-	}
-	p := buildPlan(rType, compileName, representation)
-	planCache.Set(key, p)
-	return p
+	return planCache.GetOrCreate(key, func() *typePlan { return buildPlan(rType, compileName, representation) })
 }
 
 func buildPlan(rType reflect.Type, compileName func(string) string, representation *xshape.Representation) *typePlan {
