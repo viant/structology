@@ -281,3 +281,13 @@ all compatible with Apache License, Version 2. Please see individual files for d
 ## Credits and Acknowledgements
 
 **Library Author:** Adrian Witas
+
+## Opt-in effective field metadata
+
+`WithRepresentation(*shape.Representation)` supplies effective field names/tags
+while preserving the original linked instance, field layout, embedding and methods.
+It is supported by `Marshal`, `MarshalStandard`, `NewMarshaller`, `Unmarshal` and
+`UnmarshalStandard`. Nil or unchanged metadata preserves the existing codec path.
+`UnmarshalStandard` delegates ordinary leaves and unchanged subtrees to encoding/json;
+formatted/native policies remain owned by `Unmarshal`. Complete custom JSON/Text
+methods retain their own representation and cannot be rewritten internally.

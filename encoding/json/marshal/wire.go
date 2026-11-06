@@ -2,6 +2,7 @@ package marshal
 
 import (
 	"fmt"
+	xshape "github.com/viant/x/shape"
 	"reflect"
 	"strings"
 	"time"
@@ -10,13 +11,14 @@ import (
 // WireShape is immutable JSON metadata from this engine's actual field plans.
 // It is neither a Go type builder nor a schema dialect.
 type WireShape struct {
-	source     reflect.Type
-	kind       reflect.Kind
-	nullable   bool
-	length     int
-	format     string
-	properties []WireProperty
-	element    *WireShape
+	representation *xshape.Representation
+	source         reflect.Type
+	kind           reflect.Kind
+	nullable       bool
+	length         int
+	format         string
+	properties     []WireProperty
+	element        *WireShape
 }
 type WireProperty struct {
 	field    reflect.StructField
@@ -25,13 +27,14 @@ type WireProperty struct {
 	shape    *WireShape
 }
 
-func (s *WireShape) Source() reflect.Type       { return s.source }
-func (s *WireShape) Kind() reflect.Kind         { return s.kind }
-func (s *WireShape) Nullable() bool             { return s.nullable }
-func (s *WireShape) Length() int                { return s.length }
-func (s *WireShape) Format() string             { return s.format }
-func (s *WireShape) Properties() []WireProperty { return append([]WireProperty(nil), s.properties...) }
-func (s *WireShape) Element() *WireShape        { return s.element }
+func (s *WireShape) Representation() *xshape.Representation { return s.representation }
+func (s *WireShape) Source() reflect.Type                   { return s.source }
+func (s *WireShape) Kind() reflect.Kind                     { return s.kind }
+func (s *WireShape) Nullable() bool                         { return s.nullable }
+func (s *WireShape) Length() int                            { return s.length }
+func (s *WireShape) Format() string                         { return s.format }
+func (s *WireShape) Properties() []WireProperty             { return append([]WireProperty(nil), s.properties...) }
+func (s *WireShape) Element() *WireShape                    { return s.element }
 
 // Field returns provenance indexed from the containing WireShape.Source,
 // including anonymous/inline ancestors. Returned indexes are detached.
@@ -46,7 +49,7 @@ func (p WireProperty) Shape() *WireShape { return p.shape }
 
 // Wire projects existing plans and hooks without sampling any output values.
 func (e *Engine) Wire(t reflect.Type) (*WireShape, error) {
-	return (&wireCompiler{engine: e, active: map[wireKey]*WireShape{}, inline: map[reflect.Type]bool{}}).value(t, nil)
+	return (&wireCompiler{engine: e, active: map[wireKey]*WireShape{}, inline: map[reflect.Type]bool{}}).value(t, nil, e.representation)
 }
 
 type wireCompiler struct {
@@ -55,12 +58,20 @@ type wireCompiler struct {
 	inline map[reflect.Type]bool
 }
 
-func (c *wireCompiler) value(t reflect.Type, path []string) (*WireShape, error) {
+func (c *wireCompiler) value(t reflect.Type, path []string, representations ...*xshape.Representation) (*WireShape, error) {
+	representation := representationForType(selectedRepresentation(representations), t)
+	if representation != nil && representation.Original() != t {
+		return nil, fmt.Errorf("wire representation type mismatch")
+	}
+	var child *xshape.Representation
+	if representation != nil {
+		child = representation.Elem()
+	}
 	if t == nil {
 		return nil, fmt.Errorf("wire type is required")
 	}
 	if t.Kind() == reflect.Pointer {
-		item, err := c.value(t.Elem(), path)
+		item, err := c.value(t.Elem(), path, child)
 		if err != nil {
 			return nil, err
 		}
@@ -78,18 +89,19 @@ func (c *wireCompiler) value(t reflect.Type, path []string) (*WireShape, error) 
 		return c.time(t, c.engine.timeLayout), nil
 	}
 	key := c.key(t, path)
+	key.representation = representation
 	if prior := c.active[key]; prior != nil {
 		if c.engine.Exclude != nil || c.engine.hasTransform {
 			return nil, fmt.Errorf("path-dependent recursive wire type %s is not representable", t)
 		}
 		return prior, nil
 	}
-	result := &WireShape{source: t, kind: t.Kind(), length: -1}
+	result := &WireShape{source: t, kind: t.Kind(), length: -1, representation: representation}
 	c.active[key] = result
 	defer delete(c.active, key)
 	switch t.Kind() {
 	case reflect.Struct:
-		plan := c.engine.getDynamicPlan(t)
+		plan := c.engine.getDynamicPlan(t, representation)
 		if plan.inlineIdx >= 0 {
 			return nil, fmt.Errorf("whole-value inline JSON requires explicit wire authority: %s", t)
 		}
@@ -101,7 +113,7 @@ func (c *wireCompiler) value(t reflect.Type, path []string) (*WireShape, error) 
 		if t.Kind() == reflect.Array {
 			result.length = t.Len()
 		}
-		item, err := c.value(t.Elem(), path)
+		item, err := c.value(t.Elem(), path, child)
 		if err != nil {
 			return nil, err
 		}
@@ -117,7 +129,7 @@ func (c *wireCompiler) value(t reflect.Type, path []string) (*WireShape, error) 
 		if (c.engine.hasExclude || c.engine.hasTransform) && (element.Kind() == reflect.Struct || element.Kind() == reflect.Map || element.Kind() == reflect.Slice || element.Kind() == reflect.Array) {
 			return nil, fmt.Errorf("dynamic map value paths require explicit wire authority")
 		}
-		item, err := c.value(t.Elem(), path)
+		item, err := c.value(t.Elem(), path, child)
 		if err != nil {
 			return nil, err
 		}
@@ -154,7 +166,7 @@ func (c *wireCompiler) fields(target *WireShape, plan *structPlan, path []string
 				return fmt.Errorf("recursive inline field %s", field.fieldName)
 			}
 			c.inline[base] = true
-			nested := c.engine.getDynamicPlan(base)
+			nested := c.engine.getDynamicPlan(base, field.representation)
 			if nested.inlineIdx >= 0 {
 				return fmt.Errorf("whole-value inline JSON field %s", field.fieldName)
 			}
@@ -181,7 +193,7 @@ func (c *wireCompiler) fields(target *WireShape, plan *structPlan, path []string
 		if c.engine.hasTransform || c.engine.hasExclude {
 			childPath = append(append([]string(nil), path...), name)
 		}
-		item, err := c.value(field.rType, childPath)
+		item, err := c.value(field.rType, childPath, field.representation)
 		if err != nil {
 			return fmt.Errorf("field %s: %w", field.fieldName, err)
 		}
@@ -197,7 +209,7 @@ func (c *wireCompiler) fields(target *WireShape, plan *structPlan, path []string
 			copy.nullable = true
 			item = &copy
 		}
-		source := field.owner.Field(field.index)
+		source := field.metadata
 		source.Index = append(append([]int(nil), indexes...), source.Index...)
 		target.properties = append(target.properties, WireProperty{field: source, name: name, required: !optional && !field.omitempty && !c.engine.omitEmpty, shape: item})
 	}
@@ -215,8 +227,9 @@ func (c *wireCompiler) time(t reflect.Type, layout string) *WireShape {
 }
 
 type wireKey struct {
-	typeOf reflect.Type
-	scope  string
+	representation *xshape.Representation
+	typeOf         reflect.Type
+	scope          string
 }
 
 func (c *wireCompiler) key(t reflect.Type, path []string) wireKey {

@@ -13,11 +13,13 @@ import (
 
 	"github.com/francoispqt/gojay"
 	"github.com/viant/structology/encoding/json/internal/tagutil"
+	xshape "github.com/viant/x/shape"
 	"github.com/viant/xunsafe"
 )
 
 // Engine marshals values with transform/exclusion hooks.
 type Engine struct {
+	representation  *xshape.Representation
 	fieldExclusions map[fieldLocation]bool
 	NameTransform   func(path []string, field string) string
 	Exclude         func(path []string, field string) bool
@@ -31,8 +33,8 @@ type Engine struct {
 	compileName  func(string) string
 
 	planMu       sync.RWMutex
-	staticPlans  map[reflect.Type]*structPlan
-	dynamicPlans map[reflect.Type]*structPlan
+	staticPlans  map[any]*structPlan
+	dynamicPlans map[any]*structPlan
 
 	customMu    sync.RWMutex
 	customTypes map[reflect.Type]bool
@@ -48,27 +50,29 @@ type structPlan struct {
 }
 
 type fieldPlan struct {
-	custom     bool
-	owner      reflect.Type
-	fieldName  string
-	name       string
-	keyLit     []byte
-	omitempty  bool
-	nullable   bool
-	anonymous  bool
-	inline     bool
-	ignore     bool
-	index      int
-	kind       reflect.Kind
-	ptrElem    reflect.Kind
-	rType      reflect.Type
-	xField     *xunsafe.Field
-	explicit   bool
-	inlineRaw  bool
-	timeLayout string
-	fast       bool
-	appendFn   func(*[]byte, unsafe.Pointer) error
-	emptyFn    func(unsafe.Pointer) bool
+	representation *xshape.Representation
+	metadata       reflect.StructField
+	custom         bool
+	owner          reflect.Type
+	fieldName      string
+	name           string
+	keyLit         []byte
+	omitempty      bool
+	nullable       bool
+	anonymous      bool
+	inline         bool
+	ignore         bool
+	index          int
+	kind           reflect.Kind
+	ptrElem        reflect.Kind
+	rType          reflect.Type
+	xField         *xunsafe.Field
+	explicit       bool
+	inlineRaw      bool
+	timeLayout     string
+	fast           bool
+	appendFn       func(*[]byte, unsafe.Pointer) error
+	emptyFn        func(unsafe.Pointer) bool
 }
 
 type fastFieldOp struct {
@@ -118,13 +122,64 @@ func New(nameTransform func(path []string, field string) string, exclude func(pa
 		timeLayout:    timeLayout,
 		caseKey:       caseKey,
 		compileName:   compileName,
-		staticPlans:   map[reflect.Type]*structPlan{},
-		dynamicPlans:  map[reflect.Type]*structPlan{},
+		staticPlans:   map[any]*structPlan{},
+		dynamicPlans:  map[any]*structPlan{},
 		customTypes:   map[reflect.Type]bool{},
 	}
 }
 
+// WithRepresentation opts into effective field metadata over canonical storage.
+func (e *Engine) WithRepresentation(r *xshape.Representation) *Engine {
+	if r == nil || !r.Changed() {
+		return e
+	}
+	result := New(e.NameTransform, e.Exclude, e.omitEmpty, e.nilSliceNull, e.timeLayout, e.caseKey, e.compileName)
+	result.fieldExclusions = e.fieldExclusions
+	result.representation = r
+	return result
+}
+func (e *Engine) validateRepresentation(typ reflect.Type) error {
+	if e.representation == nil || typ == nil {
+		return nil
+	}
+	original := e.representation.Original()
+	for original.Kind() == reflect.Pointer {
+		original = original.Elem()
+	}
+	for typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	if typ != original {
+		return fmt.Errorf("representation expects %s, got %s", original, typ)
+	}
+	return nil
+}
+func representationForType(r *xshape.Representation, t reflect.Type) *xshape.Representation {
+	if r == nil || !r.Changed() {
+		return nil
+	}
+	for r.Original() != t && r.Original().Kind() == reflect.Pointer {
+		r = r.Elem()
+	}
+	return r
+}
+func selectedRepresentation(values []*xshape.Representation) *xshape.Representation {
+	if len(values) == 0 {
+		return nil
+	}
+	return values[0]
+}
+func representationElem(r *xshape.Representation) *xshape.Representation {
+	if r == nil {
+		return nil
+	}
+	return r.Elem()
+}
+
 func (e *Engine) Marshal(value interface{}) ([]byte, error) {
+	if err := e.validateRepresentation(reflect.TypeOf(value)); err != nil {
+		return nil, err
+	}
 	sess := acquireSession()
 	defer releaseSession(sess)
 	if value == nil {
@@ -133,7 +188,7 @@ func (e *Engine) Marshal(value interface{}) ([]byte, error) {
 		return out, nil
 	}
 	rv := reflect.ValueOf(value)
-	if err := e.appendValue(sess, rv); err != nil {
+	if err := e.appendValue(sess, rv, e.representation); err != nil {
 		return nil, err
 	}
 	out := append([]byte(nil), sess.buf...)
@@ -142,6 +197,9 @@ func (e *Engine) Marshal(value interface{}) ([]byte, error) {
 
 // MarshalTo appends marshaled JSON to dst and returns the resulting slice.
 func (e *Engine) MarshalTo(dst []byte, value interface{}) ([]byte, error) {
+	if err := e.validateRepresentation(reflect.TypeOf(value)); err != nil {
+		return nil, err
+	}
 	dst = ensureSpare(dst, 128)
 	sess := encoderSession{buf: dst}
 	if value == nil {
@@ -149,7 +207,7 @@ func (e *Engine) MarshalTo(dst []byte, value interface{}) ([]byte, error) {
 		return sess.buf, nil
 	}
 	rv := reflect.ValueOf(value)
-	if err := e.appendValue(&sess, rv); err != nil {
+	if err := e.appendValue(&sess, rv, e.representation); err != nil {
 		return nil, err
 	}
 	return sess.buf, nil
@@ -184,6 +242,9 @@ func (e *Engine) MarshalTypedPtr(dst []byte, elemType reflect.Type, ptr unsafe.P
 }
 
 func (e *Engine) marshalPtrTyped(dst []byte, elemType reflect.Type, ptr unsafe.Pointer) ([]byte, error) {
+	if err := e.validateRepresentation(elemType); err != nil {
+		return nil, err
+	}
 	dst = ensureSpare(dst, 128)
 	if ptr == nil {
 		return append(dst, "null"...), nil
@@ -200,12 +261,12 @@ func (e *Engine) marshalPtrTyped(dst []byte, elemType reflect.Type, ptr unsafe.P
 	}
 	if !e.hasTransform && !e.hasExclude {
 		if elemType.Kind() == reflect.Struct {
-			plan := e.getStaticPlan(elemType)
+			plan := e.getStaticPlan(elemType, e.representation)
 			if plan.fastOnly {
 				return e.appendStructFastOnly(dst, plan, ptr)
 			}
 			sess := encoderSession{buf: dst}
-			if err := e.appendStructStaticPtr(&sess, elemType, ptr); err != nil {
+			if err := e.appendStructStaticPtr(&sess, elemType, ptr, e.representation); err != nil {
 				return nil, err
 			}
 			return sess.buf, nil
@@ -213,19 +274,20 @@ func (e *Engine) marshalPtrTyped(dst []byte, elemType reflect.Type, ptr unsafe.P
 	}
 	sess := encoderSession{buf: dst}
 	root := reflect.NewAt(elemType, ptr).Elem()
-	if err := e.appendValue(&sess, root); err != nil {
+	if err := e.appendValue(&sess, root, e.representation); err != nil {
 		return nil, err
 	}
 	return sess.buf, nil
 }
 
-func (e *Engine) appendStructStaticPtr(sess *encoderSession, rt reflect.Type, structPtr unsafe.Pointer) error {
+func (e *Engine) appendStructStaticPtr(sess *encoderSession, rt reflect.Type, structPtr unsafe.Pointer, representations ...*xshape.Representation) error {
+	representation := selectedRepresentation(representations)
 	if e.hasCustomMarshalerType(rt) {
 		if handled, err := e.tryAppendCustomMarshaler(sess, reflect.NewAt(rt, structPtr).Elem()); handled || err != nil {
 			return err
 		}
 	}
-	plan := e.getStaticPlan(rt)
+	plan := e.getStaticPlan(rt, representation)
 	if plan.inlineIdx >= 0 {
 		p := &plan.fields[plan.inlineIdx]
 		if p.inlineRaw {
@@ -245,7 +307,7 @@ func (e *Engine) appendStructStaticPtr(sess *encoderSession, rt reflect.Type, st
 			}
 			inlineVal = inlineVal.Elem()
 		}
-		return e.appendValue(sess, inlineVal)
+		return e.appendValue(sess, inlineVal, p.representation)
 	}
 	if handled, err := e.tryInlineRawMessage(sess, plan, structPtr); handled || err != nil {
 		return err
@@ -345,7 +407,8 @@ func (e *Engine) currentPath(sess *encoderSession) []string {
 	return sess.path.segments[:sess.path.depth]
 }
 
-func (e *Engine) appendValue(sess *encoderSession, rv reflect.Value) error {
+func (e *Engine) appendValue(sess *encoderSession, rv reflect.Value, representations ...*xshape.Representation) error {
+	representation := selectedRepresentation(representations)
 	if !rv.IsValid() {
 		sess.buf = append(sess.buf, "null"...)
 		return nil
@@ -370,9 +433,9 @@ func (e *Engine) appendValue(sess *encoderSession, rv reflect.Value) error {
 			return nil
 		}
 		if !e.hasTransform && !e.hasExclude {
-			return e.appendStructStatic(sess, rv)
+			return e.appendStructStatic(sess, rv, representationForType(representation, rv.Type()))
 		}
-		return e.appendStructDynamic(sess, rv)
+		return e.appendStructDynamic(sess, rv, representationForType(representation, rv.Type()))
 	case reflect.Slice, reflect.Array:
 		if rv.Kind() == reflect.Slice && rv.IsNil() {
 			if e.nilSliceNull {
@@ -387,7 +450,7 @@ func (e *Engine) appendValue(sess *encoderSession, rv reflect.Value) error {
 			if i > 0 {
 				sess.buf = append(sess.buf, ',')
 			}
-			if err := e.appendValue(sess, rv.Index(i)); err != nil {
+			if err := e.appendValue(sess, rv.Index(i), representationElem(representationForType(representation, rv.Type()))); err != nil {
 				return err
 			}
 		}
@@ -399,9 +462,9 @@ func (e *Engine) appendValue(sess *encoderSession, rv reflect.Value) error {
 			return nil
 		}
 		if !e.hasTransform && !e.hasExclude {
-			return e.appendMapStatic(sess, rv)
+			return e.appendMapStatic(sess, rv, representationForType(representation, rv.Type()))
 		}
-		return e.appendMapDynamic(sess, rv)
+		return e.appendMapDynamic(sess, rv, representationForType(representation, rv.Type()))
 	case reflect.String:
 		sess.buf = strconv.AppendQuote(sess.buf, rv.String())
 		return nil
@@ -544,9 +607,10 @@ func isTimeTypeOrPtr(rt reflect.Type) bool {
 	return rt == timeType
 }
 
-func (e *Engine) appendStructStatic(sess *encoderSession, rv reflect.Value) error {
+func (e *Engine) appendStructStatic(sess *encoderSession, rv reflect.Value, representations ...*xshape.Representation) error {
+	representation := selectedRepresentation(representations)
 	rt := rv.Type()
-	plan := e.getStaticPlan(rt)
+	plan := e.getStaticPlan(rt, representation)
 	if plan.inlineIdx >= 0 {
 		p := &plan.fields[plan.inlineIdx]
 		if p.inlineRaw {
@@ -559,7 +623,7 @@ func (e *Engine) appendStructStatic(sess *encoderSession, rv reflect.Value) erro
 			sess.buf = append(sess.buf, raw...)
 			return nil
 		}
-		return e.appendValue(sess, rv.Field(plan.inlineIdx))
+		return e.appendValue(sess, rv.Field(plan.inlineIdx), plan.fields[plan.inlineIdx].representation)
 	}
 	structPtr := structPointer(rv, rt)
 	if handled, err := e.tryInlineRawMessage(sess, plan, structPtr); handled || err != nil {
@@ -598,11 +662,11 @@ func (e *Engine) appendStructStatic(sess *encoderSession, rv reflect.Value) erro
 			if !skipInline {
 				switch inlineVal.Kind() {
 				case reflect.Struct:
-					if err := e.appendStructFieldsStatic(sess, inlineVal, &fieldCounter); err != nil {
+					if err := e.appendStructFieldsStatic(sess, inlineVal, &fieldCounter, p.representation); err != nil {
 						return err
 					}
 				case reflect.Map:
-					if err := e.appendMapFields(sess, inlineVal, &fieldCounter); err != nil {
+					if err := e.appendMapFields(sess, inlineVal, &fieldCounter, p.representation); err != nil {
 						return err
 					}
 				}
@@ -634,7 +698,7 @@ func (e *Engine) appendStructStatic(sess *encoderSession, rv reflect.Value) erro
 			if appendFormattedTimeField(sess, p, fv) {
 				continue
 			}
-			if err := e.appendValue(sess, fv); err != nil {
+			if err := e.appendValue(sess, fv, p.representation); err != nil {
 				return err
 			}
 		}
@@ -643,15 +707,16 @@ func (e *Engine) appendStructStatic(sess *encoderSession, rv reflect.Value) erro
 	return nil
 }
 
-func (e *Engine) appendStructFieldsStatic(sess *encoderSession, rv reflect.Value, counter *int) error {
+func (e *Engine) appendStructFieldsStatic(sess *encoderSession, rv reflect.Value, counter *int, representations ...*xshape.Representation) error {
+	representation := selectedRepresentation(representations)
 	rt := rv.Type()
-	plan := e.getStaticPlan(rt)
+	plan := e.getStaticPlan(rt, representation)
 	if plan.inlineIdx >= 0 {
 		if *counter > 0 {
 			sess.buf = append(sess.buf, ',')
 		}
 		*counter++
-		return e.appendValue(sess, rv.Field(plan.inlineIdx))
+		return e.appendValue(sess, rv.Field(plan.inlineIdx), plan.fields[plan.inlineIdx].representation)
 	}
 	structPtr := structPointer(rv, rt)
 	for i := range plan.fields {
@@ -685,11 +750,11 @@ func (e *Engine) appendStructFieldsStatic(sess *encoderSession, rv reflect.Value
 			if !skipInline {
 				switch inlineVal.Kind() {
 				case reflect.Struct:
-					if err := e.appendStructFieldsStatic(sess, inlineVal, counter); err != nil {
+					if err := e.appendStructFieldsStatic(sess, inlineVal, counter, p.representation); err != nil {
 						return err
 					}
 				case reflect.Map:
-					if err := e.appendMapFields(sess, inlineVal, counter); err != nil {
+					if err := e.appendMapFields(sess, inlineVal, counter, p.representation); err != nil {
 						return err
 					}
 				}
@@ -721,7 +786,7 @@ func (e *Engine) appendStructFieldsStatic(sess *encoderSession, rv reflect.Value
 			if appendFormattedTimeField(sess, p, fv) {
 				continue
 			}
-			if err := e.appendValue(sess, fv); err != nil {
+			if err := e.appendValue(sess, fv, p.representation); err != nil {
 				return err
 			}
 		}
@@ -729,10 +794,11 @@ func (e *Engine) appendStructFieldsStatic(sess *encoderSession, rv reflect.Value
 	return nil
 }
 
-func (e *Engine) appendStructDynamic(sess *encoderSession, rv reflect.Value) error {
+func (e *Engine) appendStructDynamic(sess *encoderSession, rv reflect.Value, representations ...*xshape.Representation) error {
+	representation := selectedRepresentation(representations)
 	rv, structPtr := addressableStruct(rv)
 	rt := rv.Type()
-	plan := e.getDynamicPlan(rt)
+	plan := e.getDynamicPlan(rt, representation)
 	if plan.inlineIdx >= 0 {
 		p := &plan.fields[plan.inlineIdx]
 		if p.inlineRaw {
@@ -744,7 +810,7 @@ func (e *Engine) appendStructDynamic(sess *encoderSession, rv reflect.Value) err
 			sess.buf = append(sess.buf, raw...)
 			return nil
 		}
-		return e.appendValue(sess, rv.Field(plan.inlineIdx))
+		return e.appendValue(sess, rv.Field(plan.inlineIdx), plan.fields[plan.inlineIdx].representation)
 	}
 	if handled, err := e.tryInlineRawMessage(sess, plan, structPtr); handled || err != nil {
 		return err
@@ -791,12 +857,12 @@ func (e *Engine) appendStructFieldsDynamic(sess *encoderSession, rv reflect.Valu
 				switch inlineVal.Kind() {
 				case reflect.Struct:
 					inlineVal, inlinePtr := addressableStruct(inlineVal)
-					inlinePlan := e.getDynamicPlan(inlineVal.Type())
+					inlinePlan := e.getDynamicPlan(inlineVal.Type(), p.representation)
 					if err := e.appendStructFieldsDynamic(sess, inlineVal, inlinePlan, inlinePtr, counter); err != nil {
 						return err
 					}
 				case reflect.Map:
-					if err := e.appendMapFields(sess, inlineVal, counter); err != nil {
+					if err := e.appendMapFields(sess, inlineVal, counter, p.representation); err != nil {
 						return err
 					}
 				}
@@ -865,13 +931,13 @@ func (e *Engine) appendStructFieldsDynamic(sess *encoderSession, rv reflect.Valu
 			}
 			if e.hasTransform || e.hasExclude {
 				sess.path.push(name)
-				err := e.appendValue(sess, fv)
+				err := e.appendValue(sess, fv, p.representation)
 				sess.path.pop()
 				if err != nil {
 					return err
 				}
 			} else {
-				if err := e.appendValue(sess, fv); err != nil {
+				if err := e.appendValue(sess, fv, p.representation); err != nil {
 					return err
 				}
 			}
@@ -890,23 +956,26 @@ func addressableStruct(rv reflect.Value) (reflect.Value, unsafe.Pointer) {
 	return tmp.Elem(), unsafe.Pointer(tmp.Pointer())
 }
 
-func (e *Engine) appendMapStatic(sess *encoderSession, rv reflect.Value) error {
+func (e *Engine) appendMapStatic(sess *encoderSession, rv reflect.Value, representations ...*xshape.Representation) error {
+	representation := selectedRepresentation(representations)
 	sess.buf = append(sess.buf, '{')
 	counter := 0
-	if err := e.appendMapFields(sess, rv, &counter); err != nil {
+	if err := e.appendMapFields(sess, rv, &counter, representation); err != nil {
 		return err
 	}
 	sess.buf = append(sess.buf, '}')
 	return nil
 }
 
-func (e *Engine) appendMapDynamic(sess *encoderSession, rv reflect.Value) error {
-	return e.appendMapStatic(sess, rv)
+func (e *Engine) appendMapDynamic(sess *encoderSession, rv reflect.Value, representations ...*xshape.Representation) error {
+	representation := selectedRepresentation(representations)
+	return e.appendMapStatic(sess, rv, representationForType(representation, rv.Type()))
 }
 
 // appendMapFields shares ordinary map value/path handling with inline maps.
 // The enclosing struct keeps field order, including duplicate-key precedence.
-func (e *Engine) appendMapFields(sess *encoderSession, rv reflect.Value, counter *int) error {
+func (e *Engine) appendMapFields(sess *encoderSession, rv reflect.Value, counter *int, representations ...*xshape.Representation) error {
+	representation := selectedRepresentation(representations)
 	path := e.currentPath(sess)
 	iter := rv.MapRange()
 	for iter.Next() {
@@ -923,7 +992,7 @@ func (e *Engine) appendMapFields(sess *encoderSession, rv reflect.Value, counter
 		if e.hasTransform || e.hasExclude {
 			sess.path.push(name)
 		}
-		err := e.appendValue(sess, iter.Value())
+		err := e.appendValue(sess, iter.Value(), representationElem(representationForType(representation, rv.Type())))
 		if e.hasTransform || e.hasExclude {
 			sess.path.pop()
 		}
@@ -956,43 +1025,54 @@ func structPointer(rv reflect.Value, rt reflect.Type) unsafe.Pointer {
 	return unsafe.Pointer(tmp.Pointer())
 }
 
-func (e *Engine) getStaticPlan(rt reflect.Type) *structPlan {
+func (e *Engine) getStaticPlan(rt reflect.Type, representations ...*xshape.Representation) *structPlan {
+	representation := representationForType(selectedRepresentation(representations), rt)
+	var key any = rt
+	if representation != nil {
+		key = representation
+	}
 	e.planMu.RLock()
-	if p := e.staticPlans[rt]; p != nil {
+	if p := e.staticPlans[key]; p != nil {
 		e.planMu.RUnlock()
 		return p
 	}
 	e.planMu.RUnlock()
-	plan := buildStructPlan(rt, e.compileName, e.hasCustomMarshalerType)
+	plan := buildStructPlan(rt, e.compileName, e.hasCustomMarshalerType, representation)
 	e.planMu.Lock()
-	if p := e.staticPlans[rt]; p != nil {
+	if p := e.staticPlans[key]; p != nil {
 		e.planMu.Unlock()
 		return p
 	}
-	e.staticPlans[rt] = plan
+	e.staticPlans[key] = plan
 	e.planMu.Unlock()
 	return plan
 }
 
-func (e *Engine) getDynamicPlan(rt reflect.Type) *structPlan {
+func (e *Engine) getDynamicPlan(rt reflect.Type, representations ...*xshape.Representation) *structPlan {
+	representation := representationForType(selectedRepresentation(representations), rt)
+	var key any = rt
+	if representation != nil {
+		key = representation
+	}
 	e.planMu.RLock()
-	if p := e.dynamicPlans[rt]; p != nil {
+	if p := e.dynamicPlans[key]; p != nil {
 		e.planMu.RUnlock()
 		return p
 	}
 	e.planMu.RUnlock()
-	plan := buildStructPlan(rt, e.compileName, e.hasCustomMarshalerType)
+	plan := buildStructPlan(rt, e.compileName, e.hasCustomMarshalerType, representation)
 	e.planMu.Lock()
-	if p := e.dynamicPlans[rt]; p != nil {
+	if p := e.dynamicPlans[key]; p != nil {
 		e.planMu.Unlock()
 		return p
 	}
-	e.dynamicPlans[rt] = plan
+	e.dynamicPlans[key] = plan
 	e.planMu.Unlock()
 	return plan
 }
 
-func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom func(reflect.Type) bool) *structPlan {
+func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom func(reflect.Type) bool, representations ...*xshape.Representation) *structPlan {
+	representation := representationForType(selectedRepresentation(representations), rt)
 	result := &structPlan{
 		hidden:    map[string]bool{},
 		fields:    make([]fieldPlan, 0, rt.NumField()),
@@ -1004,7 +1084,13 @@ func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom
 	inlineCandidates := make([]int, 0, 1)
 	hasExplicitNonInline := false
 	for i := 0; i < rt.NumField(); i++ {
-		field := rt.Field(i)
+		original := rt.Field(i)
+		field := original
+		var child *xshape.Representation
+		if representation != nil {
+			field = representation.Field(i)
+			child = representation.FieldShape(i)
+		}
 		if field.PkgPath != "" {
 			continue
 		}
@@ -1036,27 +1122,29 @@ func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom
 			fast = false
 		}
 		fp := fieldPlan{
-			custom:     custom,
-			owner:      rt,
-			fieldName:  field.Name,
-			name:       name,
-			keyLit:     appendQuotedName(nil, name),
-			omitempty:  resolved.OmitEmpty,
-			nullable:   fTag.Nullable,
-			anonymous:  field.Anonymous,
-			inline:     inline,
-			ignore:     ignore,
-			index:      i,
-			kind:       kind,
-			rType:      field.Type,
-			xField:     xunsafe.NewField(field),
-			explicit:   explicit,
-			inlineRaw:  inlineRaw,
-			timeLayout: fTag.TimeLayout,
-			ptrElem:    ptrElem,
-			fast:       fast,
-			appendFn:   primitiveAppendFunc(kind, ptrElem),
-			emptyFn:    primitiveEmptyFunc(kind, ptrElem),
+			representation: child,
+			metadata:       field,
+			custom:         custom,
+			owner:          rt,
+			fieldName:      original.Name,
+			name:           name,
+			keyLit:         appendQuotedName(nil, name),
+			omitempty:      resolved.OmitEmpty,
+			nullable:       fTag.Nullable,
+			anonymous:      field.Anonymous,
+			inline:         inline,
+			ignore:         ignore,
+			index:          i,
+			kind:           kind,
+			rType:          field.Type,
+			xField:         xunsafe.NewField(original),
+			explicit:       explicit,
+			inlineRaw:      inlineRaw,
+			timeLayout:     fTag.TimeLayout,
+			ptrElem:        ptrElem,
+			fast:           fast,
+			appendFn:       primitiveAppendFunc(kind, ptrElem),
+			emptyFn:        primitiveEmptyFunc(kind, ptrElem),
 		}
 		result.fields = append(result.fields, fp)
 		if !ignore {
@@ -1118,9 +1206,9 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 			}
 			switch inlineVal.Kind() {
 			case reflect.Struct:
-				return e.appendStructFieldsStatic(sess, inlineVal, counter)
+				return e.appendStructFieldsStatic(sess, inlineVal, counter, fp.representation)
 			case reflect.Map:
-				return e.appendMapFields(sess, inlineVal, counter)
+				return e.appendMapFields(sess, inlineVal, counter, fp.representation)
 			}
 			return nil
 		}
@@ -1336,7 +1424,7 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 					idx++
 					sess.buf = strconv.AppendQuote(sess.buf, k)
 					sess.buf = append(sess.buf, ':')
-					if err := e.appendValue(sess, reflect.ValueOf(v)); err != nil {
+					if err := e.appendValue(sess, reflect.ValueOf(v), fp.representation); err != nil {
 						return err
 					}
 				}
@@ -1369,7 +1457,7 @@ func compileValueFieldOp(fp fieldPlan) staticFieldOp {
 			sess.buf = append(sess.buf, "null"...)
 			return nil
 		}
-		return e.appendValue(sess, fv)
+		return e.appendValue(sess, fv, fp.representation)
 	}
 }
 

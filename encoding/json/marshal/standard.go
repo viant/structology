@@ -14,26 +14,47 @@ import (
 // Standard describes encoding/json v1 output. It never encodes values and does
 // not reuse the transformed engine's field, omission or inline policy.
 type Standard struct {
-	typeOf reflect.Type
-	once   sync.Once
-	shape  *WireShape
-	err    error
+	representation *xshape.Representation
+	typeOf         reflect.Type
+	once           sync.Once
+	shape          *WireShape
+	err            error
 }
 
 func NewStandard(t reflect.Type) *Standard { return &Standard{typeOf: t} }
+
+// WithRepresentation opts into metadata without replacing canonical storage.
+func (s *Standard) WithRepresentation(r *xshape.Representation) *Standard {
+	return &Standard{typeOf: s.typeOf, representation: r}
+}
 func (s *Standard) Wire() (*WireShape, error) {
 	s.once.Do(func() {
-		s.shape, s.err = (&standardCompiler{objects: map[reflect.Type]*WireShape{}, active: map[reflect.Type]bool{}}).value(s.typeOf)
+		s.shape, s.err = (&standardCompiler{objects: map[standardShapeKey]*WireShape{}, active: map[standardShapeKey]bool{}}).value(s.typeOf, s.representation)
 	})
 	return s.shape, s.err
 }
 
+type standardShapeKey struct {
+	typ            reflect.Type
+	representation *xshape.Representation
+}
 type standardCompiler struct {
-	objects map[reflect.Type]*WireShape
-	active  map[reflect.Type]bool
+	objects map[standardShapeKey]*WireShape
+	active  map[standardShapeKey]bool
 }
 
-func (c *standardCompiler) value(t reflect.Type) (*WireShape, error) {
+func (c *standardCompiler) value(t reflect.Type, representation *xshape.Representation) (*WireShape, error) {
+	if representation != nil && !representation.Changed() {
+		representation = nil
+	}
+	if representation != nil && representation.Original() != t {
+		return nil, fmt.Errorf("wire representation type mismatch")
+	}
+	var child *xshape.Representation
+	if representation != nil {
+		child = representation.Elem()
+	}
+	key := standardShapeKey{t, representation}
 	if t == nil {
 		return nil, fmt.Errorf("standard JSON wire type is required")
 	}
@@ -43,7 +64,7 @@ func (c *standardCompiler) value(t reflect.Type) (*WireShape, error) {
 	}
 
 	if t.Kind() == reflect.Pointer {
-		element, err := c.value(t.Elem())
+		element, err := c.value(t.Elem(), child)
 		if err != nil {
 			return nil, err
 		}
@@ -52,19 +73,25 @@ func (c *standardCompiler) value(t reflect.Type) (*WireShape, error) {
 	if !isTimeTypeOrPtr(t) && (t.Implements(reflect.TypeFor[stdjson.Marshaler]()) || reflect.PointerTo(t).Implements(reflect.TypeFor[stdjson.Marshaler]()) || t.Implements(reflect.TypeFor[encoding.TextMarshaler]()) || reflect.PointerTo(t).Implements(reflect.TypeFor[encoding.TextMarshaler]())) {
 		return customWireShape(t), nil
 	}
-	if prior := c.objects[t]; prior != nil {
+	if prior := c.objects[key]; prior != nil {
 		return prior, nil
 	}
-	if c.active[t] {
+	if c.active[key] {
 		return nil, fmt.Errorf("recursive non-object standard JSON type %s is not representable", t)
 	}
-	c.active[t] = true
-	defer delete(c.active, t)
-	result := &WireShape{source: t, kind: t.Kind(), length: -1}
+	c.active[key] = true
+	defer delete(c.active, key)
+	result := &WireShape{source: t, kind: t.Kind(), length: -1, representation: representation}
 	switch t.Kind() {
 	case reflect.Struct:
-		c.objects[t] = result
-		fields, err := xshape.Linked(t).JSONFields()
+		c.objects[key] = result
+		var fields []xshape.JSONField
+		var err error
+		if representation != nil {
+			fields, err = representation.JSONFields()
+		} else {
+			fields, err = xshape.Linked(t).JSONFields()
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -72,7 +99,11 @@ func (c *standardCompiler) value(t reflect.Type) (*WireShape, error) {
 			if field.Field.Tag.Get("setMarker") == "true" {
 				return nil, fmt.Errorf("output presence field %s.%s must be hidden by its JSON contract", t, field.Field.Name)
 			}
-			property, err := c.value(field.Field.ReflectedType)
+			var fieldShape *xshape.Representation
+			if representation != nil {
+				fieldShape = representation.FieldShapeByIndex(field.Field.Index)
+			}
+			property, err := c.value(field.Field.ReflectedType, fieldShape)
 			if err != nil {
 				return nil, fmt.Errorf("field %s: %w", field.Name, err)
 			}
@@ -94,7 +125,7 @@ func (c *standardCompiler) value(t reflect.Type) (*WireShape, error) {
 				return result, nil
 			}
 		}
-		element, err := c.value(t.Elem())
+		element, err := c.value(t.Elem(), child)
 		if err != nil {
 			return nil, err
 		}
@@ -107,7 +138,7 @@ func (c *standardCompiler) value(t reflect.Type) (*WireShape, error) {
 				return nil, fmt.Errorf("unsupported standard JSON map key %s", t.Key())
 			}
 		}
-		element, err := c.value(t.Elem())
+		element, err := c.value(t.Elem(), child)
 		if err != nil {
 			return nil, err
 		}

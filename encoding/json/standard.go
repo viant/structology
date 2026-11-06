@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	jsonmarshal "github.com/viant/structology/encoding/json/marshal"
+	jsonunmarshal "github.com/viant/structology/encoding/json/unmarshal"
 )
 
 // MarshalStandard applies field exclusion while retaining encoding/json v1
@@ -31,7 +32,7 @@ func MarshalStandard(value any, opts ...Option) ([]byte, error) {
 	if indexed, ok := cfg.PathExcluder.(IndexedPathFieldExcluder); ok {
 		byIndex = indexed.ExcludeField
 	}
-	return jsonmarshal.NewStandardEncoder(exclude, byIndex).Marshal(value)
+	return jsonmarshal.NewStandardEncoder(exclude, byIndex).WithRepresentation(cfg.Representation).Marshal(value)
 }
 
 // IndexedPathFieldExcluder optionally supplies exact promoted-field identity to
@@ -39,4 +40,17 @@ func MarshalStandard(value any, opts ...Option) ([]byte, error) {
 type IndexedPathFieldExcluder interface {
 	PathFieldExcluder
 	ExcludeField(path []string, index []int) bool
+}
+
+// UnmarshalStandard keeps encoding/json decoding while opting into effective
+// field metadata. Formatting and native decoder policies belong to Unmarshal.
+func UnmarshalStandard(data []byte, destination any, opts ...Option) error {
+	if len(opts) == 0 {
+		return stdjson.Unmarshal(data, destination)
+	}
+	cfg := resolveOptions(context.Background(), opts)
+	if cfg.CaseFormat != "" || cfg.FormatTag != nil || cfg.UnknownFieldPolicy != IgnoreUnknown || cfg.NumberPolicy != CoerceNumbers || cfg.NullPolicy != CompatNulls || cfg.DuplicateKeyPolicy != LastWins || cfg.PathUnmarshalHook != nil || cfg.FieldUnmarshalHook != nil {
+		return fmt.Errorf("standard JSON decoding does not accept native decoding transforms")
+	}
+	return jsonunmarshal.NewStandardDecoder(cfg.Representation).Unmarshal(data, destination)
 }

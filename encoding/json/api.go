@@ -96,7 +96,7 @@ func UnmarshalContext(ctx context.Context, data []byte, dest interface{}, opts .
 		compileName = func(field string) string { return tr.Transform("", field) }
 	}
 	u := jsonunmarshal.New(cfg.Ctx, cfg.scannerHooks, unknown, number, nulls, duplicates, malformed, cfg.TimeLayout, caseKey, compileName, cfg.PathUnmarshalHook)
-	return u.Unmarshal(data, dest)
+	return u.WithRepresentation(cfg.Representation).Unmarshal(data, dest)
 }
 
 // Unmarshal unmarshals using context.Background unless overridden by options.
