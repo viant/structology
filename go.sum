@@ -120,6 +120,8 @@ github.com/viant/tagly v0.3.0 h1:Y8IckveeSrroR8yisq4MBdxhcNqf4v8II01uCpamh4E=
 github.com/viant/tagly v0.3.0/go.mod h1:PauQQkHmAvL5lFGr4gIgi+PE0aUPggBIBYN34sX2Oes=
 github.com/viant/tagly v0.4.2-0.20261106060238-fe360d6f7ac4 h1:YemH0LJ8+XObvgyKS0yoQobZWK5qBaz4KElJOZnyXaY=
 github.com/viant/tagly v0.4.2-0.20261106060238-fe360d6f7ac4/go.mod h1:PauQQkHmAvL5lFGr4gIgi+PE0aUPggBIBYN34sX2Oes=
+github.com/viant/tagly v0.4.2-0.20261107063809-009ed2996dae h1:TRYhcTjBwWABDL2Z1QLAfN/QjbGEf/QLerZfonqNOCM=
+github.com/viant/tagly v0.4.2-0.20261107063809-009ed2996dae/go.mod h1:PauQQkHmAvL5lFGr4gIgi+PE0aUPggBIBYN34sX2Oes=
 github.com/viant/toolbox v0.24.0/go.mod h1:OxMCG57V0PXuIP2HNQrtJf2CjqdmbrOx5EkMILuUhzM=
 github.com/viant/x v0.4.1-0.20260914174450-0e043f24aec5 h1:lawjTgyL6kTkNui0nO90prnwkGokzm8sSOGVMClnSfY=
 github.com/viant/x v0.4.1-0.20260914174450-0e043f24aec5/go.mod h1:Ud4v5LGA8uA0EfmuO4H0t0YgAq2FNLnh3ydQUjBdaLI=
@@ -127,6 +129,8 @@ github.com/viant/x v0.6.1-0.20261106041415-0487ec66884b h1:0JPaEl3YxP6IvqX6dJGd+
 github.com/viant/x v0.6.1-0.20261106041415-0487ec66884b/go.mod h1:Ud4v5LGA8uA0EfmuO4H0t0YgAq2FNLnh3ydQUjBdaLI=
 github.com/viant/xunsafe v0.10.4-0.20260223225257-275a15956559 h1:tQOsy7ov3XcTj+OXNF1apq9EKxSj82f5AjJCuhfCkMo=
 github.com/viant/xunsafe v0.10.4-0.20260223225257-275a15956559/go.mod h1:RLSFNYewiF4p7+Lc18N4Zv4DHPWMTEky2VCLWvBdC5o=
+github.com/viant/xunsafe v0.11.1 h1:cKzAyBzlc4xh771ihsrHqQeBP0wFWCkLCfzT8u+SULU=
+github.com/viant/xunsafe v0.11.1/go.mod h1:tREfeTKhjN/P6Ul0qmGgt3eiTMkCSlFzfEv4SneNEEs=
 go.opencensus.io v0.18.0/go.mod h1:vKdFvxhtzZ9onBp9VKHK8z/sRpBMnKAsufL7wlDrCOA=
 go4.org v0.0.0-20180809161055-417644f6feb5/go.mod h1:MkTOUMDaeVYJUOUsaDXIhWPZYa1yOyC1qaOBpL57BhE=
 golang.org/x/build v0.0.0-20190111050920-041ab4dc3f9d/go.mod h1:OWs+y06UdEOHN4y+MfF/py+xQ/tYqIWW03b70/CG9Rw=
