@@ -178,6 +178,9 @@ func (f *FieldFilter) holderField(t reflect.Type, name string, cfg *Options, pat
 	if count != 1 {
 		return xshape.JSONField{}, false, fmt.Errorf("JSON selection holder %q is ambiguous on %v", name, t)
 	}
+	if cfg != nil && selectionFieldIgnored(t, selected.Field.Index) {
+		return xshape.JSONField{}, false, nil
+	}
 	wireName := selectionWireName(selected, cfg, path)
 	for _, field := range fields {
 		if field.Field.Index == nil || reflect.DeepEqual(field.Field.Index, selected.Field.Index) {
@@ -324,6 +327,13 @@ func (f *FieldFilter) fields(t reflect.Type, cfg *Options) ([]xshape.JSONField, 
 	if err != nil || cfg == nil {
 		return fields, err
 	}
+	visible := make([]xshape.JSONField, 0, len(fields))
+	for _, field := range fields {
+		if !selectionFieldIgnored(t, field.Field.Index) {
+			visible = append(visible, field)
+		}
+	}
+	fields = visible
 	native := map[string]bool{}
 	if err = f.transformedIndexes(t, nil, native, map[reflect.Type]bool{}); err != nil {
 		return nil, err
@@ -337,6 +347,22 @@ func (f *FieldFilter) fields(t reflect.Type, cfg *Options) ([]xshape.JSONField, 
 		}
 	}
 	return fields, nil
+}
+
+// Selection cannot restore a field hidden by the native encoder's tags,
+// including fields promoted through an ignored embedded parent.
+func selectionFieldIgnored(t reflect.Type, index []int) bool {
+	for _, part := range index {
+		for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+			t = t.Elem()
+		}
+		field := t.Field(part)
+		if field.Tag.Get("setMarker") == "true" || tagutil.ResolveFieldTag(field).Ignore {
+			return true
+		}
+		t = field.Type
+	}
+	return false
 }
 
 func (f *FieldFilter) ExcludePath(path []string, field string) bool {

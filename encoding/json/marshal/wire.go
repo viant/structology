@@ -17,6 +17,7 @@ type WireShape struct {
 	format     string
 	properties []WireProperty
 	element    *WireShape
+	additional *WireShape
 }
 type WireProperty struct {
 	field    reflect.StructField
@@ -32,6 +33,10 @@ func (s *WireShape) Length() int                { return s.length }
 func (s *WireShape) Format() string             { return s.format }
 func (s *WireShape) Properties() []WireProperty { return append([]WireProperty(nil), s.properties...) }
 func (s *WireShape) Element() *WireShape        { return s.element }
+
+// Additional returns the value shape contributed by native inline maps.
+// Named properties already account for emission order and last-member-wins decoding.
+func (s *WireShape) Additional() *WireShape { return s.additional }
 
 // Field returns provenance indexed from the containing WireShape.Source,
 // including anonymous/inline ancestors. Returned indexes are detached.
@@ -124,7 +129,9 @@ func (c *wireCompiler) value(t reflect.Type, path []string) (*WireShape, error) 
 		result.element = item
 		result.nullable = true
 	case reflect.Interface:
-		return nil, fmt.Errorf("dynamic interface %s requires explicit wire authority", t)
+		// The encoder already supports dynamic leaves. Retain the same
+		// unconstrained shape as standard JSON without guessing a concrete value.
+		result.nullable = true
 	case reflect.String, reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.Float32, reflect.Float64:
 	default:
 		return nil, fmt.Errorf("unsupported JSON wire type %s", t)
@@ -146,6 +153,14 @@ func (c *wireCompiler) fields(target *WireShape, plan *structPlan, path []string
 			for base.Kind() == reflect.Pointer {
 				nullable = true
 				base = base.Elem()
+			}
+			if field.inline && base.Kind() == reflect.Map && base.Key().Kind() == reflect.String && base.Elem() == reflect.TypeFor[any]() {
+				item := &WireShape{source: base.Elem(), kind: reflect.Interface, nullable: true, length: -1}
+				target.additional = item
+				for i := range target.properties {
+					target.properties[i].shape = item
+				}
+				continue
 			}
 			if base.Kind() != reflect.Struct {
 				return fmt.Errorf("non-object inline field %s is not representable", field.fieldName)
@@ -196,6 +211,9 @@ func (c *wireCompiler) fields(target *WireShape, plan *structPlan, path []string
 			copy := *item
 			copy.nullable = true
 			item = &copy
+		}
+		if target.additional != nil && (optional || field.omitempty || c.engine.omitEmpty) {
+			item = target.additional
 		}
 		source := field.owner.Field(field.index)
 		source.Index = append(append([]int(nil), indexes...), source.Index...)

@@ -177,3 +177,52 @@ func TestCanonicalSelectionKeepsRootRelativeEmbeddedIndexes(t *testing.T) {
 	require.True(t, filter.ExcludeIndexes([]int{0, 0, 1}))
 	require.False(t, filter.ExcludeIndexes([]int{0, 0, 0}))
 }
+
+func TestTransformedSelectionPreservesInternalVisibility(t *testing.T) {
+	type Hidden struct {
+		Token string `json:"token"`
+	}
+	type row struct {
+		Hidden `internal:"true"`
+		ID     int               `json:"id"`
+		Secret string            `json:"secret" internal:"true"`
+		Name   string            `json:"name"`
+		Has    struct{ ID bool } `setMarker:"true"`
+	}
+	type output struct {
+		Data []row `json:"data"`
+	}
+	value := output{Data: []row{{Hidden: Hidden{Token: "private"}, ID: 7, Secret: "private", Name: "visible"}}}
+	for _, fields := range [][]string{{"ID"}, {"ID", "Secret", "Token", "Has"}} {
+		filter, err := structjson.NewFieldFilter(reflect.TypeOf(value), []structjson.FieldSelection{{Path: []string{"Data"}, Fields: fields}})
+		require.NoError(t, err)
+		transformed, err := filter.WithOptions()
+		require.NoError(t, err)
+		got, err := structjson.Marshal(value, structjson.WithPathFieldExcluder(transformed))
+		require.NoError(t, err)
+		require.JSONEq(t, `{"data":[{"id":7}]}`, string(got))
+		require.Equal(t, "private", value.Data[0].Secret)
+	}
+}
+
+func TestTransformedSelectionHiddenHolderStaysHidden(t *testing.T) {
+	type row struct {
+		ID int `json:"id"`
+	}
+	type output struct {
+		Rows   []row  `json:"rows" internal:"true"`
+		Status string `json:"status"`
+	}
+	value := output{Rows: []row{{ID: 7}}, Status: "ok"}
+	filter, err := structjson.NewFieldFilter(reflect.TypeOf(value), []structjson.FieldSelection{{Path: []string{"Rows"}, Fields: []string{"ID"}}})
+	require.NoError(t, err)
+	transformed, err := filter.WithOptions()
+	require.NoError(t, err)
+	got, err := structjson.Marshal(value, structjson.WithPathFieldExcluder(transformed))
+	require.NoError(t, err)
+	require.JSONEq(t, `{"status":"ok"}`, string(got))
+	// Resolving native visibility must not mutate the standard filter.
+	standard, err := structjson.MarshalStandard(value, structjson.WithPathFieldExcluder(filter))
+	require.NoError(t, err)
+	require.JSONEq(t, `{"rows":[{"id":7}],"status":"ok"}`, string(standard))
+}
