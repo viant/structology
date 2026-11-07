@@ -1599,6 +1599,7 @@ type foldField struct {
 
 type fieldPlan struct {
 	canonicalName      string
+	exactInput         bool
 	timePolicy         *format.Tag
 	timeErr            error
 	enumeration        *choice.Enum
@@ -1745,10 +1746,15 @@ func buildPlan(rType reflect.Type, compileName func(string) string, representati
 			fp.enumeration, fp.enumErr = choice.ParseEnum(sf.Tag, sf.Type)
 			fp.timePolicy, fp.timeErr = declaredTimePolicy(sf)
 			policy, aliasErr := declaredInputPolicy(sf.Tag)
+			if ignore {
+				policy = nil
+				aliasErr = nil
+			}
 			inputPolicies = append(inputPolicies, policy)
 			aliases := ""
 			if policy != nil {
 				aliases = policy.InputNames
+				fp.exactInput = policy.InputCase == "exact"
 			}
 			if aliasErr != nil && p.err == nil {
 				p.err = aliasErr
@@ -1820,7 +1826,7 @@ func lookupField(plan *typePlan, key string) (*fieldPlan, bool) {
 	}
 	candidates := plan.fieldsByFold[foldedHash(key)]
 	for _, candidate := range candidates {
-		if strings.EqualFold(candidate.key, key) {
+		if !candidate.fp.exactInput && strings.EqualFold(candidate.key, key) {
 			return candidate.fp, true
 		}
 	}

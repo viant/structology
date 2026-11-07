@@ -10,7 +10,8 @@ import (
 )
 
 func declaredInputPolicy(tag reflect.StructTag) (*format.Tag, error) {
-	if !strings.Contains(strings.ToLower(tag.Get("format")), "inputnames") {
+	value := strings.ToLower(tag.Get("format"))
+	if !strings.Contains(value, "inputnames") && !strings.Contains(value, "inputgroup") && !strings.Contains(value, "inputpriority") && !strings.Contains(value, "inputcase") {
 		return nil, nil
 	}
 	return format.Parse(tag)
