@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/francoispqt/gojay v1.2.13
 	github.com/stretchr/testify v1.11.1
-	github.com/viant/tagly v0.4.2-0.20261107175818-942858d975e7
+	github.com/viant/tagly v0.4.2-0.20261107195829-52499ca0316d
 	github.com/viant/xunsafe v0.11.1
 )
 

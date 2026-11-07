@@ -51,7 +51,7 @@ func StandardBoolSelector(typ reflect.Type, representation *shape.Representation
 			if field.Tag.Get("internal") != "" || field.Tag.Get("jsonx") != "" || field.Tag.Get("enum") != "" {
 				return false
 			}
-			for _, key := range []string{"choice", "enumStyle", "enumAccept", "enumAlias", "enumCase", "enumInteger", "enumUnknownString"} {
+			for _, key := range []string{"choice", "enumStyle", "enumAccept", "enumAlias", "enumCase", "enumInteger", "enumUnknownString", "enumUnknownInteger"} {
 				if _, declared := field.Tag.Lookup(key); declared {
 					return false
 				}
