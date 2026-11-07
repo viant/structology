@@ -9,6 +9,7 @@ import (
 
 	"github.com/viant/structology/encoding/json/internal/lru"
 	"github.com/viant/tagly/choice"
+	"github.com/viant/tagly/format"
 	"github.com/viant/x/shape"
 )
 
@@ -30,7 +31,7 @@ func NewStandardDecoder(metadata *shape.Representation) *StandardDecoder {
 	return &StandardDecoder{representation: metadata}
 }
 func (d *StandardDecoder) Unmarshal(data []byte, destination any) error {
-	if !d.presence && (d.representation == nil || !d.representation.Changed()) && !choice.HasEnum(reflect.TypeOf(destination)) {
+	if !d.presence && (d.representation == nil || !d.representation.Changed()) && !choice.HasEnum(reflect.TypeOf(destination)) && !hasDeclaredTimePolicy(reflect.TypeOf(destination)) {
 		return json.Unmarshal(data, destination)
 	}
 	value := reflect.ValueOf(destination)
@@ -60,7 +61,7 @@ func (d *StandardDecoder) Unmarshal(data []byte, destination any) error {
 	return decodeStandardRepresentation(data, value, metadata, d.presence)
 }
 func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *shape.Representation, presence bool) error {
-	if hasCustomUnmarshalType(value.Type()) || (!presence && (metadata == nil || !metadata.Changed()) && !choice.HasEnum(value.Type())) {
+	if hasCustomUnmarshalType(value.Type()) || (!presence && (metadata == nil || !metadata.Changed()) && !choice.HasEnum(value.Type()) && !hasDeclaredTimePolicy(value.Type())) {
 		return json.Unmarshal(data, value.Addr().Interface())
 	}
 	if metadata == nil {
@@ -139,7 +140,12 @@ func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *sh
 				return err
 			}
 			enumeration := plan.enums[index]
-			if enumeration != nil {
+			if plan.timeErrors[index] != nil {
+				return plan.timeErrors[index]
+			}
+			if policy := plan.timePolicies[index]; policy != nil {
+				err = assignDeclaredTime(target, policy, member)
+			} else if enumeration != nil {
 				if field.Quoted {
 					return fmt.Errorf("enumAccept conflicts with json string option")
 				}
@@ -177,92 +183,10 @@ func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *sh
 			}
 		}
 		return first
-	case reflect.Slice, reflect.Array:
-		if len(raw) == 0 || raw[0] != '[' {
-			return json.Unmarshal(raw, value.Addr().Interface())
-		}
-		var members []json.RawMessage
-		if err := json.Unmarshal(raw, &members); err != nil {
-			return err
-		}
-		var first error
-		for i, member := range members {
-			if value.Kind() == reflect.Array && i >= value.Len() {
-				break
-			}
-			if value.Kind() == reflect.Slice && i >= value.Len() {
-				value.Grow(i + 1 - value.Len())
-				value.SetLen(i + 1)
-			}
-			if err := decodeStandardRepresentation(member, value.Index(i), metadata.Elem(), presence); err != nil {
-				if _, ok := err.(*json.UnmarshalTypeError); !ok {
-					return err
-				}
-				if first == nil {
-					first = err
-				}
-			}
-		}
-		if value.Kind() == reflect.Slice {
-			if len(members) == 0 {
-				value.Set(reflect.MakeSlice(value.Type(), 0, 0))
-			} else {
-				value.SetLen(len(members))
-			}
-		} else {
-			for i := len(members); i < value.Len(); i++ {
-				value.Index(i).SetZero()
-			}
-		}
-		return first
-	case reflect.Map:
-		if len(raw) == 0 || raw[0] != '{' {
-			return json.Unmarshal(raw, value.Addr().Interface())
-		}
-		keyMapType := reflect.MapOf(value.Type().Key(), reflect.TypeFor[json.RawMessage]())
-		if err := json.Unmarshal([]byte("{}"), reflect.New(keyMapType).Interface()); err != nil {
-			return err
-		}
-		if value.IsNil() {
-			value.Set(reflect.MakeMap(value.Type()))
-		}
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		if _, err := decoder.Token(); err != nil {
-			return err
-		}
-		var first error
-		for decoder.More() {
-			token, err := decoder.Token()
-			if err != nil {
-				return err
-			}
-			var member json.RawMessage
-			if err = decoder.Decode(&member); err != nil {
-				return err
-			}
-			// Delegate key decoding, including TextUnmarshaler and integer boundaries,
-			// to the selected standard decoder rather than inventing another key parser.
-			encodedKey, _ := json.Marshal(token.(string))
-			keyObject := append([]byte{'{'}, encodedKey...)
-			keyObject = append(keyObject, []byte(":null}")...)
-			keyMap := reflect.New(keyMapType)
-			if err = json.Unmarshal(keyObject, keyMap.Interface()); err != nil {
-				return err
-			}
-			key := keyMap.Elem().MapKeys()[0]
-			element := reflect.New(value.Type().Elem()).Elem()
-			err = decodeStandardRepresentation(member, element, metadata.Elem(), presence)
-			if err != nil {
-				if _, ok := err.(*json.UnmarshalTypeError); !ok {
-					return err
-				}
-				if first == nil {
-					first = err
-				}
-			}
-			value.SetMapIndex(key, element)
-		}
-		return first
+	case reflect.Slice, reflect.Array, reflect.Map:
+		return decodeRawCollection(raw, value, metadata, false, func(member []byte, target reflect.Value, child *shape.Representation) error {
+			return decodeStandardRepresentation(member, target, child, presence)
+		})
 	default:
 		return json.Unmarshal(raw, value.Addr().Interface())
 	}
@@ -352,10 +276,12 @@ type standardDecodeKey struct {
 	representation *shape.Representation
 }
 type standardDecodePlan struct {
-	fields     []shape.JSONField
-	enums      []*choice.Enum
-	enumErrors []error
-	err        error
+	timePolicies []*format.Tag
+	timeErrors   []error
+	fields       []shape.JSONField
+	enums        []*choice.Enum
+	enumErrors   []error
+	err          error
 }
 
 var standardDecodeCache = lru.New[standardDecodeKey, *standardDecodePlan](2048)
@@ -374,10 +300,13 @@ func standardDecodePlanFor(typ reflect.Type, metadata *shape.Representation) *st
 		if result.err != nil {
 			return result
 		}
+		result.timePolicies = make([]*format.Tag, len(result.fields))
+		result.timeErrors = make([]error, len(result.fields))
 		result.enums = make([]*choice.Enum, len(result.fields))
 		result.enumErrors = make([]error, len(result.fields))
 		for i, field := range result.fields {
 			result.enums[i], result.enumErrors[i] = choice.ParseEnum(field.Field.Tag, field.Field.ReflectedType)
+			result.timePolicies[i], result.timeErrors[i] = declaredTimePolicy(reflect.StructField{Type: field.Field.ReflectedType, Tag: field.Field.Tag})
 		}
 		return result
 	})

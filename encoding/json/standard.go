@@ -47,8 +47,8 @@ type IndexedPathFieldExcluder interface {
 // UnmarshalStandard keeps encoding/json decoding while opting into effective
 // field metadata. Formatting and native decoder policies belong to Unmarshal.
 func UnmarshalStandard(data []byte, destination any, opts ...Option) error {
-	if len(opts) == 0 && !choice.HasEnum(reflect.TypeOf(destination)) {
-		return stdjson.Unmarshal(data, destination)
+	if len(opts) == 0 {
+		return jsonunmarshal.NewStandardDecoder(nil).Unmarshal(data, destination)
 	}
 	cfg := resolveOptions(context.Background(), opts)
 	if cfg.CaseFormat != "" || cfg.FormatTag != nil || cfg.UnknownFieldPolicy != IgnoreUnknown || cfg.NumberPolicy != CoerceNumbers || cfg.NullPolicy != CompatNulls || cfg.DuplicateKeyPolicy != LastWins || cfg.PathUnmarshalHook != nil || cfg.FieldUnmarshalHook != nil {

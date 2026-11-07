@@ -1,6 +1,7 @@
 package marshal
 
 import (
+	"github.com/viant/tagly/format"
 	"reflect"
 	"strconv"
 	"time"
@@ -18,7 +19,7 @@ func appendFormattedTimeField(session *encoderSession, field *fieldPlan, value r
 		if field.nullable && timestamp.IsZero() {
 			session.buf = append(session.buf, "null"...)
 		} else {
-			session.buf = strconv.AppendQuote(session.buf, timestamp.Format(field.timeLayout))
+			session.buf = strconv.AppendQuote(session.buf, formatFieldTime(field.timeFormat, timestamp, field.timeLayout))
 		}
 		return true
 	}
@@ -29,6 +30,22 @@ func appendFormattedTimeField(session *encoderSession, field *fieldPlan, value r
 		session.buf = append(session.buf, "null"...)
 		return true
 	}
-	session.buf = strconv.AppendQuote(session.buf, value.Elem().Interface().(time.Time).Format(field.timeLayout))
+	timestamp := value.Elem().Interface().(time.Time)
+	if field.nullable && timestamp.IsZero() {
+		session.buf = append(session.buf, "null"...)
+	} else {
+		session.buf = strconv.AppendQuote(session.buf, formatFieldTime(field.timeFormat, timestamp, field.timeLayout))
+	}
 	return true
+}
+
+func formatFieldTime(policy *format.Tag, value time.Time, layout string) string {
+	if policy == nil || policy.Timezone == "" {
+		return value.Format(layout)
+	}
+	// Copy field metadata to avoid mutating a shared compiled plan when a
+	// directly constructed tag has not yet resolved its timezone.
+	copy := *policy
+	copy.TimeLayout = layout
+	return copy.FormatTime(&value)
 }

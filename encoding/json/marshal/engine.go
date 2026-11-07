@@ -15,6 +15,7 @@ import (
 	"github.com/viant/structology/encoding/json/internal/lru"
 	"github.com/viant/structology/encoding/json/internal/tagutil"
 	"github.com/viant/tagly/choice"
+	"github.com/viant/tagly/format"
 	xshape "github.com/viant/x/shape"
 	"github.com/viant/xunsafe"
 )
@@ -70,6 +71,7 @@ type fieldPlan struct {
 	explicit       bool
 	inlineRaw      bool
 	timeLayout     string
+	timeFormat     *format.Tag
 	fast           bool
 	appendFn       func(*[]byte, unsafe.Pointer) error
 	emptyFn        func(unsafe.Pointer) bool
@@ -916,7 +918,7 @@ func (e *Engine) appendStructFieldsDynamic(sess *encoderSession, rv reflect.Valu
 				if p.timeLayout != "" {
 					layout = p.timeLayout
 				}
-				sess.buf = strconv.AppendQuote(sess.buf, ts.Format(layout))
+				sess.buf = strconv.AppendQuote(sess.buf, formatFieldTime(p.timeFormat, ts, layout))
 				continue
 			}
 			if p.kind == reflect.Ptr && p.ptrElem == reflect.Struct && p.rType.Elem() == timeType {
@@ -925,11 +927,15 @@ func (e *Engine) appendStructFieldsDynamic(sess *encoderSession, rv reflect.Valu
 					sess.buf = append(sess.buf, "null"...)
 					continue
 				}
+				if p.nullable && xunsafe.AsTime(timePtr).IsZero() {
+					sess.buf = append(sess.buf, "null"...)
+					continue
+				}
 				layout := e.timeLayout
 				if p.timeLayout != "" {
 					layout = p.timeLayout
 				}
-				sess.buf = strconv.AppendQuote(sess.buf, xunsafe.AsTime(timePtr).Format(layout))
+				sess.buf = strconv.AppendQuote(sess.buf, formatFieldTime(p.timeFormat, xunsafe.AsTime(timePtr), layout))
 				continue
 			}
 			if p.nullable && isEmptyValue(fv) {
@@ -1121,6 +1127,7 @@ func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom
 			explicit:       explicit,
 			inlineRaw:      inlineRaw,
 			timeLayout:     fTag.TimeLayout,
+			timeFormat:     fTag.TimeFormat,
 			ptrElem:        ptrElem,
 			fast:           fast,
 			appendFn:       primitiveAppendFunc(kind, ptrElem),
@@ -1266,7 +1273,7 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 				if fieldLayout != "" {
 					layout = fieldLayout
 				}
-				sess.buf = strconv.AppendQuote(sess.buf, ts.Format(layout))
+				sess.buf = strconv.AppendQuote(sess.buf, formatFieldTime(fp.timeFormat, ts, layout))
 				return nil
 			}
 		}
@@ -1308,7 +1315,11 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 				if fieldLayout != "" {
 					layout = fieldLayout
 				}
-				sess.buf = strconv.AppendQuote(sess.buf, xunsafe.AsTime(fieldPtr).Format(layout))
+				if fp.nullable && xunsafe.AsTime(fieldPtr).IsZero() {
+					sess.buf = append(sess.buf, "null"...)
+					return nil
+				}
+				sess.buf = strconv.AppendQuote(sess.buf, formatFieldTime(fp.timeFormat, xunsafe.AsTime(fieldPtr), layout))
 				return nil
 			}
 		}

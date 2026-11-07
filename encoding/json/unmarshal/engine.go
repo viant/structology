@@ -17,6 +17,7 @@ import (
 	"github.com/viant/structology/encoding/json/internal/lru"
 	"github.com/viant/structology/encoding/json/internal/tagutil"
 	"github.com/viant/tagly/choice"
+	"github.com/viant/tagly/format"
 	ftime "github.com/viant/tagly/format/time"
 	xshape "github.com/viant/x/shape"
 	"github.com/viant/xunsafe"
@@ -179,6 +180,9 @@ func (e *Engine) Unmarshal(data []byte, dest interface{}) error {
 			ptr := xunsafe.RefPointer(xunsafe.AsPointer(dest))
 			return e.unmarshalStructFast(data, ptr, target)
 		}
+		if hasDeclaredTimePolicy(target, e.representation) {
+			return e.decodeTimePolicyCollection(data, reflect.ValueOf(dest).Elem(), e.representation)
+		}
 	}
 	parsed, err := decodeJSON(data, e.Hooks, e.DuplicateKeyPolicy, e.MalformedPolicy)
 	if err != nil {
@@ -269,8 +273,35 @@ func (e *Engine) unmarshalStructFromDecoder(d *scalarDecoder, structPtr unsafe.P
 			}
 			hooksEnabled := e.PathHook != nil
 			customUnmarshal := fp.hasCustomUnmarshal && !isTimeTypeOrPtr(fp.rType)
-			streamNested := fp.rType.Kind() == reflect.Struct || (fp.rType.Kind() == reflect.Ptr && fp.rType.Elem().Kind() == reflect.Struct)
-			if fp.enumeration != nil || fp.enumErr != nil {
+			streamNested := fp.rType.Kind() == reflect.Struct || (fp.rType.Kind() == reflect.Ptr && fp.rType.Elem().Kind() == reflect.Struct) || hasDeclaredTimePolicy(fp.rType, fp.representation)
+			if fp.timePolicy != nil || fp.timeErr != nil {
+				if fp.timeErr != nil {
+					return fp.timeErr
+				}
+				raw, rawErr := d.parseRawValue()
+				if rawErr != nil {
+					return rawErr
+				}
+				if e.PathHook != nil {
+					var input any
+					decoder := stdjson.NewDecoder(bytes.NewReader(raw))
+					decoder.UseNumber()
+					if err = decoder.Decode(&input); err != nil {
+						return err
+					}
+					input, err = e.PathHook(e.Ctx, structPtr, d.path, fp.name, input)
+					if err != nil {
+						return err
+					}
+					raw, err = stdjson.Marshal(input)
+					if err != nil {
+						return err
+					}
+				}
+				if err = assignDeclaredTime(reflect.NewAt(fp.rType, fieldPtr).Elem(), fp.timePolicy, raw); err != nil {
+					return wrapPathError(key, err)
+				}
+			} else if fp.enumeration != nil || fp.enumErr != nil {
 				if fp.enumErr != nil {
 					return fp.enumErr
 				}
@@ -442,6 +473,17 @@ func (e *Engine) unmarshalStructFromDecoder(d *scalarDecoder, structPtr unsafe.P
 
 func (e *Engine) tryDecodeTypedField(d *scalarDecoder, fp *fieldPlan, fieldPtr unsafe.Pointer) (bool, error) {
 	rt := fp.rType
+	base := rt
+	for base.Kind() == reflect.Pointer {
+		base = base.Elem()
+	}
+	if (base.Kind() == reflect.Slice || base.Kind() == reflect.Array || base.Kind() == reflect.Map) && hasDeclaredTimePolicy(rt, fp.representation) {
+		raw, err := d.parseRawValue()
+		if err != nil {
+			return true, err
+		}
+		return true, e.decodeTimePolicyCollection(raw, reflect.NewAt(rt, fieldPtr).Elem(), fp.representation)
+	}
 	switch rt.Kind() {
 	case reflect.Struct:
 		if fp.hasCustomUnmarshal {
@@ -1539,6 +1581,8 @@ type foldField struct {
 }
 
 type fieldPlan struct {
+	timePolicy         *format.Tag
+	timeErr            error
 	enumeration        *choice.Enum
 	enumErr            error
 	representation     *xshape.Representation
@@ -1677,6 +1721,7 @@ func buildPlan(rType reflect.Type, compileName func(string) string, representati
 				resolve:            buildResolver(chain),
 			}
 			fp.enumeration, fp.enumErr = choice.ParseEnum(sf.Tag, sf.Type)
+			fp.timePolicy, fp.timeErr = declaredTimePolicy(sf)
 			addField(name, fp)
 			if compileName != nil && !resolved.CaseExplicit {
 				alias := compileName(name)

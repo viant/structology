@@ -18,6 +18,7 @@ type FormatFieldTag struct {
 	Inline        bool
 	Nullable      bool
 	TimeLayout    string
+	TimeFormat    *format.Tag
 }
 
 type ResolvedFieldTag struct {
@@ -43,6 +44,7 @@ type cachedFormatTag struct {
 	hasNullable bool
 	timeLayout  string
 	dateFormat  string
+	timeFormat  *format.Tag
 }
 
 var formatTagCache sync.Map // map[string]cachedFormatTag
@@ -57,6 +59,7 @@ func ParseFormatFieldTag(sf reflect.StructField, baseName string) FormatFieldTag
 	}
 
 	ret.OmitEmpty = cached.omitEmpty
+	ret.TimeFormat = cached.timeFormat
 	ret.Ignore = cached.ignore
 	ret.Inline = cached.inline
 	ret.HasCaseFormat = cached.caseFormat != ""
@@ -133,6 +136,7 @@ func loadCachedFormatTag(rawTag string) (cachedFormatTag, bool) {
 		inline:     tag.Inline,
 		timeLayout: tag.TimeLayout,
 		dateFormat: tag.DateFormat,
+		timeFormat: tag,
 	}
 	if tag.Nullable != nil {
 		cached.hasNullable = true
