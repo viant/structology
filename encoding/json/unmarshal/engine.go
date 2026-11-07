@@ -227,6 +227,11 @@ func (e *Engine) unmarshalStructFromDecoder(d *scalarDecoder, structPtr unsafe.P
 	if plan.err != nil {
 		return plan.err
 	}
+	admitted, admissionErr := e.selectNativeInput(d, plan)
+	if admissionErr != nil {
+		return admissionErr
+	}
+	occurrence := 0
 	if plan.presence != nil {
 		_ = ensurePresenceHolder(structPtr, plan.presence)
 	}
@@ -255,8 +260,14 @@ func (e *Engine) unmarshalStructFromDecoder(d *scalarDecoder, structPtr unsafe.P
 			return fmt.Errorf("expected ':' at %d", d.pos)
 		}
 		d.pos++
+		keep := admitted == nil || admitted[occurrence]
+		occurrence++
 		fp, ok := lookupField(plan, key)
-		if !ok {
+		if !keep {
+			if _, err = d.parseRawValue(); err != nil {
+				return err
+			}
+		} else if !ok {
 			if e.UnknownFieldPolicy == ErrorOnUnknown {
 				return fmt.Errorf("unknown field %s", key)
 			}
@@ -1572,6 +1583,8 @@ func (d *scalarDecoder) parseBoolArrayInto(dst *[]bool) error {
 }
 
 type typePlan struct {
+	inputNames   *format.InputNameMatcher
+	inputFields  []*fieldPlan
 	err          error
 	rType        reflect.Type
 	fieldsByName map[string]*fieldPlan
@@ -1585,6 +1598,7 @@ type foldField struct {
 }
 
 type fieldPlan struct {
+	canonicalName      string
 	timePolicy         *format.Tag
 	timeErr            error
 	enumeration        *choice.Enum
@@ -1666,6 +1680,7 @@ func buildPlan(rType reflect.Type, compileName func(string) string, representati
 	}
 
 	var inputNames []format.InputName
+	var inputPolicies []*format.Tag
 	var inputFields []*fieldPlan
 	var collect func(t reflect.Type, parent []*xunsafe.Field, topLevel bool, representation *xshape.Representation)
 	collect = func(t reflect.Type, parent []*xunsafe.Field, topLevel bool, representation *xshape.Representation) {
@@ -1717,6 +1732,7 @@ func buildPlan(rType reflect.Type, compileName func(string) string, representati
 
 			name := resolved.Name
 			fp := &fieldPlan{
+				canonicalName:      name,
 				name:               original.Name,
 				representation:     child,
 				xField:             xf,
@@ -1728,7 +1744,12 @@ func buildPlan(rType reflect.Type, compileName func(string) string, representati
 			}
 			fp.enumeration, fp.enumErr = choice.ParseEnum(sf.Tag, sf.Type)
 			fp.timePolicy, fp.timeErr = declaredTimePolicy(sf)
-			aliases, aliasErr := declaredInputNames(sf.Tag)
+			policy, aliasErr := declaredInputPolicy(sf.Tag)
+			inputPolicies = append(inputPolicies, policy)
+			aliases := ""
+			if policy != nil {
+				aliases = policy.InputNames
+			}
 			if aliasErr != nil && p.err == nil {
 				p.err = aliasErr
 			}
@@ -1746,7 +1767,8 @@ func buildPlan(rType reflect.Type, compileName func(string) string, representati
 
 	collect(rType, nil, true, representation)
 	if p.err == nil {
-		_, p.err = format.NewInputNameMatcher(inputNames)
+		p.inputNames, p.err = format.NewInputNameMatcher(inputNames, inputPolicies...)
+		p.inputFields = inputFields
 	}
 	if p.err != nil {
 		return p
@@ -1784,6 +1806,15 @@ func buildPlan(rType reflect.Type, compileName func(string) string, representati
 }
 
 func lookupField(plan *typePlan, key string) (*fieldPlan, bool) {
+	if plan.inputNames.HasPolicies() {
+		index, _, excluded := plan.inputNames.Classify(key)
+		if excluded {
+			return nil, false
+		}
+		if index >= 0 {
+			return plan.inputFields[index], true
+		}
+	}
 	if fp, ok := plan.fieldsByName[key]; ok {
 		return fp, true
 	}
@@ -1889,7 +1920,24 @@ func assignValue(ptr unsafe.Pointer, rt reflect.Type, parsed interface{}, e *Eng
 		if plan.presence != nil {
 			_ = ensurePresenceHolder(ptr, plan.presence)
 		}
+		var selected map[string]bool
+		if plan.inputNames.HasPolicies() {
+			var members []format.InputMember
+			var keys []string
+			for key, val := range obj {
+				keys = append(keys, key)
+				members = append(members, format.InputMember{Name: nativeInputName(plan, key), Kind: parsedInputKind(val)})
+			}
+			admitted := plan.inputNames.Select(members)
+			selected = map[string]bool{}
+			for i, key := range keys {
+				selected[key] = admitted[i]
+			}
+		}
 		for key, val := range obj {
+			if selected != nil && !selected[key] {
+				continue
+			}
 			fp, ok := lookupField(plan, key)
 			if !ok {
 				if e.UnknownFieldPolicy == ErrorOnUnknown {

@@ -1,18 +1,13 @@
 package unmarshal
 
 import (
-	"github.com/viant/tagly/format"
 	"github.com/viant/x/shape"
 	"reflect"
-	"strings"
 )
 
 func declaredInputNames(tag reflect.StructTag) (string, error) {
-	if !strings.Contains(strings.ToLower(tag.Get("format")), "inputnames=") {
-		return "", nil
-	}
-	policy, err := format.Parse(tag)
-	if err != nil {
+	policy, err := declaredInputPolicy(tag)
+	if err != nil || policy == nil {
 		return "", err
 	}
 	return policy.InputNames, nil

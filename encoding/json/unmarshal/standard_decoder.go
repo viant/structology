@@ -93,7 +93,11 @@ func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *sh
 			return plan.err
 		}
 		fields := plan.fields
-		var err error
+		admitted, err := selectStandardInput(raw, plan.names)
+		if err != nil {
+			return err
+		}
+		occurrence := 0
 		decoder := json.NewDecoder(bytes.NewReader(raw))
 		if _, err = decoder.Token(); err != nil {
 			return err
@@ -108,6 +112,11 @@ func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *sh
 			var member json.RawMessage
 			if err = decoder.Decode(&member); err != nil {
 				return err
+			}
+			keep := admitted == nil || admitted[occurrence]
+			occurrence++
+			if !keep {
+				continue
 			}
 			index := plan.names.Match(key)
 			if index < 0 {
@@ -291,8 +300,14 @@ func standardDecodePlanFor(typ reflect.Type, metadata *shape.Representation) *st
 		result.enums = make([]*choice.Enum, len(result.fields))
 		result.enumErrors = make([]error, len(result.fields))
 		names := make([]format.InputName, len(result.fields))
+		policies := make([]*format.Tag, len(result.fields))
 		for i, field := range result.fields {
-			aliases, err := declaredInputNames(field.Field.Tag)
+			policy, err := declaredInputPolicy(field.Field.Tag)
+			policies[i] = policy
+			aliases := ""
+			if policy != nil {
+				aliases = policy.InputNames
+			}
 			if err != nil {
 				result.err = err
 				return result
@@ -301,7 +316,7 @@ func standardDecodePlanFor(typ reflect.Type, metadata *shape.Representation) *st
 			result.enums[i], result.enumErrors[i] = choice.ParseEnum(field.Field.Tag, field.Field.ReflectedType)
 			result.timePolicies[i], result.timeErrors[i] = declaredTimePolicy(reflect.StructField{Type: field.Field.ReflectedType, Tag: field.Field.Tag})
 		}
-		result.names, result.err = format.NewInputNameMatcher(names)
+		result.names, result.err = format.NewInputNameMatcher(names, policies...)
 		return result
 	})
 }
