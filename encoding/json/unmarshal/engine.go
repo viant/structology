@@ -16,7 +16,9 @@ import (
 
 	"github.com/viant/structology/encoding/json/internal/lru"
 	"github.com/viant/structology/encoding/json/internal/tagutil"
+	"github.com/viant/tagly/choice"
 	ftime "github.com/viant/tagly/format/time"
+	xshape "github.com/viant/x/shape"
 	"github.com/viant/xunsafe"
 )
 
@@ -74,6 +76,7 @@ type ScannerHooks interface {
 }
 
 type Engine struct {
+	representation     *xshape.Representation
 	Ctx                context.Context
 	Hooks              ScannerHooks
 	UnknownFieldPolicy UnknownFieldPolicy
@@ -106,9 +109,47 @@ func New(ctx context.Context, hooks ScannerHooks, unknown UnknownFieldPolicy, nu
 	}
 }
 
+// WithRepresentation retains canonical instances while supplying effective
+// field metadata to the existing decoder plans and presence mapping.
+func (e *Engine) WithRepresentation(r *xshape.Representation) *Engine {
+	if r != nil && !r.Changed() {
+		r = nil
+	}
+	if e.representation == r {
+		return e
+	}
+	copy := *e
+	copy.representation = r
+	return &copy
+}
+func representationFor(r *xshape.Representation, typ reflect.Type) *xshape.Representation {
+	if r == nil || !r.Changed() {
+		return nil
+	}
+	for r.Original() != typ && r.Original().Kind() == reflect.Pointer {
+		r = r.Elem()
+	}
+	return r
+}
+func representationElement(r *xshape.Representation, typ reflect.Type) *xshape.Representation {
+	if r == nil || !r.Changed() {
+		return nil
+	}
+	if r.Original() == typ {
+		return r.Elem()
+	}
+	return r // caller's destination pointer wraps the represented value
+}
+
 func (e *Engine) Unmarshal(data []byte, dest interface{}) error {
 	if dest == nil {
 		return fmt.Errorf("nil destination")
+	}
+	if e.representation != nil {
+		typ := reflect.TypeOf(dest)
+		if typ.Kind() != reflect.Pointer || typ.Elem() != e.representation.Original() {
+			return fmt.Errorf("representation expects destination *%s, got %s", e.representation.Original(), typ)
+		}
 	}
 	if rt := reflect.TypeOf(dest); rt != nil && rt.Kind() == reflect.Ptr && rt.Elem() == timeType {
 		parsed, err := decodeJSON(data, e.Hooks, e.DuplicateKeyPolicy, e.MalformedPolicy)
@@ -159,10 +200,10 @@ func (e *Engine) unmarshalStructFast(data []byte, ptr unsafe.Pointer, rType refl
 		if err != nil {
 			return err
 		}
-		return assignValue(ptr, reflect.PointerTo(rType), parsed, e)
+		return assignValue(ptr, reflect.PointerTo(rType), parsed, e, e.representation)
 	}
 	structPtr := xunsafe.SafeDerefPointer(ptr, reflect.PointerTo(rType))
-	if err := e.unmarshalStructFromDecoder(d, structPtr, rType); err != nil {
+	if err := e.unmarshalStructFromDecoder(d, structPtr, rType, representationFor(e.representation, rType)); err != nil {
 		return err
 	}
 	d.skipWS()
@@ -172,13 +213,13 @@ func (e *Engine) unmarshalStructFast(data []byte, ptr unsafe.Pointer, rType refl
 	return nil
 }
 
-func (e *Engine) unmarshalStructFromDecoder(d *scalarDecoder, structPtr unsafe.Pointer, rType reflect.Type) error {
+func (e *Engine) unmarshalStructFromDecoder(d *scalarDecoder, structPtr unsafe.Pointer, rType reflect.Type, representation *xshape.Representation) error {
 	d.skipWS()
 	if d.pos >= len(d.data) || d.data[d.pos] != '{' {
 		return fmt.Errorf("expected '{' at %d", d.pos)
 	}
 	d.pos++
-	plan := planFor(rType, e.caseKey, e.compileName)
+	plan := planFor(rType, e.caseKey, e.compileName, representation)
 	if plan.presence != nil {
 		_ = ensurePresenceHolder(structPtr, plan.presence)
 	}
@@ -229,7 +270,39 @@ func (e *Engine) unmarshalStructFromDecoder(d *scalarDecoder, structPtr unsafe.P
 			hooksEnabled := e.PathHook != nil
 			customUnmarshal := fp.hasCustomUnmarshal && !isTimeTypeOrPtr(fp.rType)
 			streamNested := fp.rType.Kind() == reflect.Struct || (fp.rType.Kind() == reflect.Ptr && fp.rType.Elem().Kind() == reflect.Struct)
-			if hooksEnabled && streamNested && !customUnmarshal {
+			if fp.enumeration != nil || fp.enumErr != nil {
+				if fp.enumErr != nil {
+					return fp.enumErr
+				}
+				start := d.pos
+				if err = d.skipRawValue(); err != nil {
+					return err
+				}
+				raw := d.data[start:d.pos]
+				if e.PathHook != nil {
+					var input any
+					decoder := stdjson.NewDecoder(bytes.NewReader(raw))
+					decoder.UseNumber()
+					if err = decoder.Decode(&input); err != nil {
+						return err
+					}
+					input, err = e.PathHook(e.Ctx, structPtr, d.path, fp.name, input)
+					if err != nil {
+						return err
+					}
+					raw, err = stdjson.Marshal(input)
+					if err != nil {
+						return err
+					}
+				}
+				converted, err := fp.enumeration.DecodeJSON(raw)
+				if err != nil {
+					return wrapPathError(key, err)
+				}
+				if err = stdjson.Unmarshal(converted, reflect.NewAt(fp.rType, fieldPtr).Interface()); err != nil {
+					return wrapPathError(key, err)
+				}
+			} else if hooksEnabled && streamNested && !customUnmarshal {
 				if handled, decodeErr := e.tryDecodeTypedField(d, fp, fieldPtr); handled {
 					if pathPushed && len(d.path) > 0 {
 						d.path = d.path[:len(d.path)-1]
@@ -386,7 +459,7 @@ func (e *Engine) tryDecodeTypedField(d *scalarDecoder, fp *fieldPlan, fieldPtr u
 				return true, nil
 			}
 		}
-		return true, e.unmarshalStructFromDecoder(d, fieldPtr, rt)
+		return true, e.unmarshalStructFromDecoder(d, fieldPtr, rt, representationFor(fp.representation, rt))
 	case reflect.Ptr:
 		if fp.hasCustomUnmarshal {
 			return false, nil
@@ -408,7 +481,7 @@ func (e *Engine) tryDecodeTypedField(d *scalarDecoder, fp *fieldPlan, fieldPtr u
 				target = unsafe.Pointer(alloc.Pointer())
 				*(*unsafe.Pointer)(fieldPtr) = target
 			}
-			return true, e.unmarshalStructFromDecoder(d, target, elem)
+			return true, e.unmarshalStructFromDecoder(d, target, elem, representationFor(fp.representation, elem))
 		}
 		if elem == stringSliceTy {
 			d.skipWS()
@@ -1466,6 +1539,9 @@ type foldField struct {
 }
 
 type fieldPlan struct {
+	enumeration        *choice.Enum
+	enumErr            error
+	representation     *xshape.Representation
 	name               string
 	xField             *xunsafe.Field
 	rType              reflect.Type
@@ -1483,26 +1559,23 @@ type presencePlan struct {
 }
 
 type planCacheKey struct {
-	rType   reflect.Type
-	caseKey string
+	representation *xshape.Representation
+	rType          reflect.Type
+	caseKey        string
 }
 
 var planCache = lru.New[planCacheKey, *typePlan](2048)
 
-func planFor(rType reflect.Type, caseKey string, compileName func(string) string) *typePlan {
+func planFor(rType reflect.Type, caseKey string, compileName func(string) string, representation *xshape.Representation) *typePlan {
 	if rType.Kind() == reflect.Ptr {
 		rType = rType.Elem()
 	}
-	key := planCacheKey{rType: rType, caseKey: caseKey}
-	if v, ok := planCache.Get(key); ok {
-		return v
-	}
-	p := buildPlan(rType, compileName)
-	planCache.Set(key, p)
-	return p
+	representation = representationFor(representation, rType)
+	key := planCacheKey{rType: rType, caseKey: caseKey, representation: representation}
+	return planCache.GetOrCreate(key, func() *typePlan { return buildPlan(rType, compileName, representation) })
 }
 
-func buildPlan(rType reflect.Type, compileName func(string) string) *typePlan {
+func buildPlan(rType reflect.Type, compileName func(string) string, representation *xshape.Representation) *typePlan {
 	p := &typePlan{rType: rType, fieldsByName: map[string]*fieldPlan{}, fieldsByFold: map[uint64][]foldField{}}
 	if rType.Kind() != reflect.Struct {
 		return p
@@ -1544,10 +1617,16 @@ func buildPlan(rType reflect.Type, compileName func(string) string) *typePlan {
 		}
 	}
 
-	var collect func(t reflect.Type, parent []*xunsafe.Field, topLevel bool)
-	collect = func(t reflect.Type, parent []*xunsafe.Field, topLevel bool) {
+	var collect func(t reflect.Type, parent []*xunsafe.Field, topLevel bool, representation *xshape.Representation)
+	collect = func(t reflect.Type, parent []*xunsafe.Field, topLevel bool, representation *xshape.Representation) {
 		for i := 0; i < t.NumField(); i++ {
-			sf := t.Field(i)
+			original := t.Field(i)
+			sf := original
+			var child *xshape.Representation
+			if representation != nil {
+				sf = representation.Field(i)
+				child = representation.FieldShape(i)
+			}
 			if sf.PkgPath != "" {
 				continue
 			}
@@ -1572,7 +1651,7 @@ func buildPlan(rType reflect.Type, compileName func(string) string) *typePlan {
 			fTag := resolved.Format
 			ignore := resolved.Ignore
 			inline := resolved.Inline
-			xf := xunsafe.NewField(sf)
+			xf := xunsafe.NewField(original)
 			chain := append(append([]*xunsafe.Field{}, parent...), xf)
 
 			if inline && !ignore {
@@ -1581,14 +1660,15 @@ func buildPlan(rType reflect.Type, compileName func(string) string) *typePlan {
 					inlineType = inlineType.Elem()
 				}
 				if inlineType.Kind() == reflect.Struct {
-					collect(inlineType, chain, false)
+					collect(inlineType, chain, false, representationFor(child, inlineType))
 					continue
 				}
 			}
 
 			name := resolved.Name
 			fp := &fieldPlan{
-				name:               sf.Name,
+				name:               original.Name,
+				representation:     child,
 				xField:             xf,
 				rType:              sf.Type,
 				ignore:             ignore,
@@ -1596,6 +1676,7 @@ func buildPlan(rType reflect.Type, compileName func(string) string) *typePlan {
 				hasCustomUnmarshal: hasCustomUnmarshalType(sf.Type),
 				resolve:            buildResolver(chain),
 			}
+			fp.enumeration, fp.enumErr = choice.ParseEnum(sf.Tag, sf.Type)
 			addField(name, fp)
 			if compileName != nil && !resolved.CaseExplicit {
 				alias := compileName(name)
@@ -1606,7 +1687,7 @@ func buildPlan(rType reflect.Type, compileName func(string) string) *typePlan {
 		}
 	}
 
-	collect(rType, nil, true)
+	collect(rType, nil, true, representation)
 	if p.presence != nil {
 		seen := map[*fieldPlan]struct{}{}
 		for _, fp := range p.fieldsByName {
@@ -1658,19 +1739,33 @@ func assignParsed(dest interface{}, parsed interface{}, e *Engine) error {
 	rootPtr := xunsafe.AsPointer(dest)
 	// assignValue expects **T when rt is *T.
 	rootPtr = xunsafe.RefPointer(rootPtr)
-	return assignValue(rootPtr, rt, parsed, e)
+	return assignValue(rootPtr, rt, parsed, e, e.representation)
 }
 
 func (e *Engine) assignPlannedField(ptr unsafe.Pointer, fp *fieldPlan, parsed interface{}) error {
+	if fp.enumErr != nil {
+		return fp.enumErr
+	}
+	if fp.enumeration != nil {
+		raw, err := stdjson.Marshal(parsed)
+		if err != nil {
+			return err
+		}
+		converted, err := fp.enumeration.DecodeJSON(raw)
+		if err != nil {
+			return err
+		}
+		return stdjson.Unmarshal(converted, reflect.NewAt(fp.rType, ptr).Interface())
+	}
 	if fp != nil && fp.timeLayout != "" {
 		if handled, err := assignTimeWithLayout(ptr, fp.rType, parsed, fp.timeLayout, e.NullPolicy); handled {
 			return err
 		}
 	}
-	return assignValue(ptr, fp.rType, parsed, e)
+	return assignValue(ptr, fp.rType, parsed, e, fp.representation)
 }
 
-func assignValue(ptr unsafe.Pointer, rt reflect.Type, parsed interface{}, e *Engine) error {
+func assignValue(ptr unsafe.Pointer, rt reflect.Type, parsed interface{}, e *Engine, representation *xshape.Representation) error {
 	if handled, err := tryAssignCustomUnmarshal(ptr, rt, parsed, e); handled || err != nil {
 		return err
 	}
@@ -1679,7 +1774,7 @@ func assignValue(ptr unsafe.Pointer, rt reflect.Type, parsed interface{}, e *Eng
 			return nil
 		}
 		inner := xunsafe.SafeDerefPointer(ptr, rt)
-		return assignValue(inner, rt.Elem(), parsed, e)
+		return assignValue(inner, rt.Elem(), parsed, e, representationElement(representation, rt))
 	}
 	if parsed == nil {
 		if e.NullPolicy == StrictNulls && !isNullableKind(rt.Kind()) {
@@ -1705,7 +1800,7 @@ func assignValue(ptr unsafe.Pointer, rt reflect.Type, parsed interface{}, e *Eng
 		if !ok {
 			return expectedObjectError(rt)
 		}
-		plan := planFor(rt, e.caseKey, e.compileName)
+		plan := planFor(rt, e.caseKey, e.compileName, representation)
 		if plan.presence != nil {
 			_ = ensurePresenceHolder(ptr, plan.presence)
 		}
@@ -1870,7 +1965,7 @@ func assignValue(ptr unsafe.Pointer, rt reflect.Type, parsed interface{}, e *Eng
 		elemType := rt.Elem()
 		for i := 0; i < len(items); i++ {
 			elem := reflect.New(elemType)
-			if err := assignValue(xunsafe.AsPointer(elem.Interface()), elemType, items[i], e); err != nil {
+			if err := assignValue(xunsafe.AsPointer(elem.Interface()), elemType, items[i], e, representationElement(representation, rt)); err != nil {
 				return wrapPathError(fmt.Sprintf("[%d]", i), err)
 			}
 			slice.Index(i).Set(elem.Elem())
@@ -1893,7 +1988,7 @@ func assignValue(ptr unsafe.Pointer, rt reflect.Type, parsed interface{}, e *Eng
 		}
 		for i := 0; i < limit; i++ {
 			elem := reflect.New(elemType)
-			if err := assignValue(xunsafe.AsPointer(elem.Interface()), elemType, items[i], e); err != nil {
+			if err := assignValue(xunsafe.AsPointer(elem.Interface()), elemType, items[i], e, representationElement(representation, rt)); err != nil {
 				return wrapPathError(fmt.Sprintf("[%d]", i), err)
 			}
 			arr.Index(i).Set(elem.Elem())
@@ -1915,7 +2010,7 @@ func assignValue(ptr unsafe.Pointer, rt reflect.Type, parsed interface{}, e *Eng
 		elemType := rt.Elem()
 		for key, val := range obj {
 			elem := reflect.New(elemType)
-			if err := assignValue(xunsafe.AsPointer(elem.Interface()), elemType, val, e); err != nil {
+			if err := assignValue(xunsafe.AsPointer(elem.Interface()), elemType, val, e, representationElement(representation, rt)); err != nil {
 				return wrapPathError(key, err)
 			}
 			mapKey := reflect.New(rt.Key()).Elem()

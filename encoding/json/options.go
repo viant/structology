@@ -2,6 +2,7 @@ package json
 
 import (
 	"context"
+	"github.com/viant/x/shape"
 	"time"
 	"unsafe"
 
@@ -221,4 +222,21 @@ func resolveOptions(ctx context.Context, opts []Option) Options {
 func WithExcludedFields(paths ...string) Option {
 	copied := append([]string(nil), paths...)
 	return optionFn(func(o *Options) { o.ExcludedFields = append([]string(nil), copied...) })
+}
+
+// WithRepresentation supplies immutable effective field metadata. Nil or
+// unchanged metadata leaves the existing linked-type codec behavior unchanged.
+func WithRepresentation(representation *shape.Representation) Option {
+	return optionFn(func(o *Options) {
+		if representation != nil && !representation.Changed() {
+			representation = nil
+		}
+		o.Representation = representation
+	})
+}
+
+// WithPresenceTracking enables native setMarker tracking for standard JSON decoding.
+// It does not replace custom JSON/Text decoder ownership.
+func WithPresenceTracking(enabled bool) Option {
+	return optionFn(func(o *Options) { o.TrackPresence = enabled })
 }

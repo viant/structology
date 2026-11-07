@@ -2,6 +2,7 @@ package json
 
 import (
 	"context"
+	"github.com/viant/x/shape"
 	"unsafe"
 
 	"github.com/viant/tagly/format"
@@ -158,6 +159,10 @@ type Option interface{ apply(*Options) }
 
 // Options defines runtime behavior.
 type Options struct {
+	// Representation is opt-in metadata over the original linked storage type.
+	Representation *shape.Representation
+	// TrackPresence opts the standard decoder into setMarker tracking.
+	TrackPresence bool
 	// ExcludedFields contains canonical Go-field paths for marshal projection.
 	ExcludedFields []string
 	Ctx            context.Context

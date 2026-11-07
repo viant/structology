@@ -3,6 +3,7 @@ package json
 import (
 	"context"
 	jsonmarshal "github.com/viant/structology/encoding/json/marshal"
+	"github.com/viant/x/shape"
 	"reflect"
 	"strings"
 	"sync"
@@ -65,5 +66,11 @@ func (cfg Options) marshalEngine() *jsonmarshal.Engine {
 		}
 	}
 
-	return jsonmarshal.New(transform, exclude, cfg.OmitEmpty, cfg.NilSlicePolicy == NilSliceAsNull, cfg.TimeLayout, caseKey, compileName)
+	return jsonmarshal.New(transform, exclude, cfg.OmitEmpty, cfg.NilSlicePolicy == NilSliceAsNull, cfg.TimeLayout, caseKey, compileName).WithRepresentation(cfg.Representation)
+}
+
+// MarshalWithRepresentation retains this marshaller's configured engine while
+// applying opt-in metadata to the original instance.
+func (m *Marshaller) MarshalWithRepresentation(value any, metadata *shape.Representation) ([]byte, error) {
+	return m.engine.WithRepresentation(metadata).Marshal(value)
 }

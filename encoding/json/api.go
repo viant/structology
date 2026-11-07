@@ -96,7 +96,7 @@ func UnmarshalContext(ctx context.Context, data []byte, dest interface{}, opts .
 		compileName = func(field string) string { return tr.Transform("", field) }
 	}
 	u := jsonunmarshal.New(cfg.Ctx, cfg.scannerHooks, unknown, number, nulls, duplicates, malformed, cfg.TimeLayout, caseKey, compileName, cfg.PathUnmarshalHook)
-	return u.Unmarshal(data, dest)
+	return u.WithRepresentation(cfg.Representation).Unmarshal(data, dest)
 }
 
 // Unmarshal unmarshals using context.Background unless overridden by options.
@@ -131,7 +131,7 @@ func structValueMeta(v interface{}) (reflect.Type, unsafe.Pointer, bool) {
 	if rt.Kind() != reflect.Struct {
 		return nil, nil, false
 	}
-	if rt == apiTimeType {
+	if rt == apiTimeType || directInterfaceValue(rt) {
 		return nil, nil, false
 	}
 	return rt, xunsafe.AsPointer(v), true
@@ -139,4 +139,19 @@ func structValueMeta(v interface{}) (reflect.Type, unsafe.Pointer, bool) {
 
 func isDefaultContext(ctx context.Context) bool {
 	return ctx == nil || ctx == context.Background() || ctx == context.TODO()
+}
+
+// Single-field wrappers can be stored directly in an interface word. That word
+// points at the map/pointee, not at addressable struct storage. Let the ordinary
+// reflect path materialize storage instead of treating it as a struct pointer.
+func directInterfaceValue(t reflect.Type) bool {
+	switch t.Kind() {
+	case reflect.Pointer, reflect.Map, reflect.Chan, reflect.Func, reflect.UnsafePointer:
+		return true
+	case reflect.Struct:
+		return t.NumField() == 1 && directInterfaceValue(t.Field(0).Type)
+	case reflect.Array:
+		return t.Len() == 1 && directInterfaceValue(t.Elem())
+	}
+	return false
 }
