@@ -1,0 +1,626 @@
+[
+  {
+    "Case": 0,
+    "Reused": false,
+    "Input": "{}",
+    "Value": {
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 0,
+    "Reused": true,
+    "Input": "{}",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 1,
+    "Reused": false,
+    "Input": "null",
+    "Value": {
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 1,
+    "Reused": true,
+    "Input": "null",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 2,
+    "Reused": false,
+    "Input": "[]",
+    "Value": {
+    },
+    "ErrorType": "*json.UnmarshalTypeError",
+    "Error": "json: cannot unmarshal array into Go value of type cubeinputaliasoracle.selector"
+  },
+  {
+    "Case": 2,
+    "Reused": true,
+    "Input": "[]",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "*json.UnmarshalTypeError",
+    "Error": "json: cannot unmarshal array into Go value of type cubeinputaliasoracle.selector"
+  },
+  {
+    "Case": 3,
+    "Reused": false,
+    "Input": "true",
+    "Value": {
+    },
+    "ErrorType": "*json.UnmarshalTypeError",
+    "Error": "json: cannot unmarshal bool into Go value of type cubeinputaliasoracle.selector"
+  },
+  {
+    "Case": 3,
+    "Reused": true,
+    "Input": "true",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "*json.UnmarshalTypeError",
+    "Error": "json: cannot unmarshal bool into Go value of type cubeinputaliasoracle.selector"
+  },
+  {
+    "Case": 4,
+    "Reused": false,
+    "Input": "1",
+    "Value": {
+    },
+    "ErrorType": "*json.UnmarshalTypeError",
+    "Error": "json: cannot unmarshal number into Go value of type cubeinputaliasoracle.selector"
+  },
+  {
+    "Case": 4,
+    "Reused": true,
+    "Input": "1",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "*json.UnmarshalTypeError",
+    "Error": "json: cannot unmarshal number into Go value of type cubeinputaliasoracle.selector"
+  },
+  {
+    "Case": 5,
+    "Reused": false,
+    "Input": "\"x\"",
+    "Value": {
+    },
+    "ErrorType": "*json.UnmarshalTypeError",
+    "Error": "json: cannot unmarshal string into Go value of type cubeinputaliasoracle.selector"
+  },
+  {
+    "Case": 5,
+    "Reused": true,
+    "Input": "\"x\"",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "*json.UnmarshalTypeError",
+    "Error": "json: cannot unmarshal string into Go value of type cubeinputaliasoracle.selector"
+  },
+  {
+    "Case": 6,
+    "Reused": false,
+    "Input": "{\"metric25\":true}",
+    "Value": {
+      "metric25": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 6,
+    "Reused": true,
+    "Input": "{\"metric25\":true}",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 7,
+    "Reused": false,
+    "Input": "{\"metric_25\":true}",
+    "Value": {
+      "metric25": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 7,
+    "Reused": true,
+    "Input": "{\"metric_25\":true}",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 8,
+    "Reused": false,
+    "Input": "{\"metric_25\":false}",
+    "Value": {
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 8,
+    "Reused": true,
+    "Input": "{\"metric_25\":false}",
+    "Value": {
+      "otherValue": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 9,
+    "Reused": false,
+    "Input": "{\"metric_25\":true,\"metric25\":false}",
+    "Value": {
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 9,
+    "Reused": true,
+    "Input": "{\"metric_25\":true,\"metric25\":false}",
+    "Value": {
+      "otherValue": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 10,
+    "Reused": false,
+    "Input": "{\"metric25\":true,\"metric_25\":false}",
+    "Value": {
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 10,
+    "Reused": true,
+    "Input": "{\"metric25\":true,\"metric_25\":false}",
+    "Value": {
+      "otherValue": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 11,
+    "Reused": false,
+    "Input": "{\"metric_25\":false,\"metric25\":true,\"metric_25\":false}",
+    "Value": {
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 11,
+    "Reused": true,
+    "Input": "{\"metric_25\":false,\"metric25\":true,\"metric_25\":false}",
+    "Value": {
+      "otherValue": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 12,
+    "Reused": false,
+    "Input": "{\"metric_25\":true,\"metric25\":null}",
+    "Value": {
+      "metric25": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 12,
+    "Reused": true,
+    "Input": "{\"metric_25\":true,\"metric25\":null}",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 13,
+    "Reused": false,
+    "Input": "{\"metric25\":true,\"metric_25\":null}",
+    "Value": {
+      "metric25": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 13,
+    "Reused": true,
+    "Input": "{\"metric25\":true,\"metric_25\":null}",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 14,
+    "Reused": false,
+    "Input": "{\"metric_25\":null,\"metric25\":false}",
+    "Value": {
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 14,
+    "Reused": true,
+    "Input": "{\"metric_25\":null,\"metric25\":false}",
+    "Value": {
+      "otherValue": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 15,
+    "Reused": false,
+    "Input": "{\"metric25\":null,\"metric_25\":false}",
+    "Value": {
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 15,
+    "Reused": true,
+    "Input": "{\"metric25\":null,\"metric_25\":false}",
+    "Value": {
+      "otherValue": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 16,
+    "Reused": false,
+    "Input": "{\"METRIC25\":true}",
+    "Value": {
+      "metric25": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 16,
+    "Reused": true,
+    "Input": "{\"METRIC25\":true}",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 17,
+    "Reused": false,
+    "Input": "{\"METRIC_25\":true}",
+    "Value": {
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 17,
+    "Reused": true,
+    "Input": "{\"METRIC_25\":true}",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 18,
+    "Reused": false,
+    "Input": "{\"Metric_25\":true}",
+    "Value": {
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 18,
+    "Reused": true,
+    "Input": "{\"Metric_25\":true}",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 19,
+    "Reused": false,
+    "Input": "{\"metric\\u005f25\":true}",
+    "Value": {
+      "metric25": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 19,
+    "Reused": true,
+    "Input": "{\"metric\\u005f25\":true}",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 20,
+    "Reused": false,
+    "Input": "{\"metric\\u003225\":true}",
+    "Value": {
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 20,
+    "Reused": true,
+    "Input": "{\"metric\\u003225\":true}",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 21,
+    "Reused": false,
+    "Input": "{\"unknown\":true}",
+    "Value": {
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 21,
+    "Reused": true,
+    "Input": "{\"unknown\":true}",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 22,
+    "Reused": false,
+    "Input": "{\"metric_25\":\"yes\",\"otherValue\":true}",
+    "Value": {
+      "otherValue": true
+    },
+    "ErrorType": "*json.UnmarshalTypeError",
+    "Error": "json: cannot unmarshal string into Go struct field selector.metric25 of type bool"
+  },
+  {
+    "Case": 22,
+    "Reused": true,
+    "Input": "{\"metric_25\":\"yes\",\"otherValue\":true}",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "*json.UnmarshalTypeError",
+    "Error": "json: cannot unmarshal string into Go struct field selector.metric25 of type bool"
+  },
+  {
+    "Case": 23,
+    "Reused": false,
+    "Input": "{\"metric_25\":1,\"other_value\":true}",
+    "Value": {
+      "otherValue": true
+    },
+    "ErrorType": "*json.UnmarshalTypeError",
+    "Error": "json: cannot unmarshal number into Go struct field selector.metric25 of type bool"
+  },
+  {
+    "Case": 23,
+    "Reused": true,
+    "Input": "{\"metric_25\":1,\"other_value\":true}",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "*json.UnmarshalTypeError",
+    "Error": "json: cannot unmarshal number into Go struct field selector.metric25 of type bool"
+  },
+  {
+    "Case": 24,
+    "Reused": false,
+    "Input": "{\"metric_25\":{},\"other_value\":true}",
+    "Value": {
+      "otherValue": true
+    },
+    "ErrorType": "*json.UnmarshalTypeError",
+    "Error": "json: cannot unmarshal object into Go struct field selector.metric25 of type bool"
+  },
+  {
+    "Case": 24,
+    "Reused": true,
+    "Input": "{\"metric_25\":{},\"other_value\":true}",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "*json.UnmarshalTypeError",
+    "Error": "json: cannot unmarshal object into Go struct field selector.metric25 of type bool"
+  },
+  {
+    "Case": 25,
+    "Reused": false,
+    "Input": "{\"metric_25\":[],\"other_value\":true}",
+    "Value": {
+      "otherValue": true
+    },
+    "ErrorType": "*json.UnmarshalTypeError",
+    "Error": "json: cannot unmarshal array into Go struct field selector.metric25 of type bool"
+  },
+  {
+    "Case": 25,
+    "Reused": true,
+    "Input": "{\"metric_25\":[],\"other_value\":true}",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "*json.UnmarshalTypeError",
+    "Error": "json: cannot unmarshal array into Go struct field selector.metric25 of type bool"
+  },
+  {
+    "Case": 26,
+    "Reused": false,
+    "Input": "{\"metric_25\":true",
+    "Value": {
+    },
+    "ErrorType": "*json.SyntaxError",
+    "Error": "unexpected end of JSON input"
+  },
+  {
+    "Case": 26,
+    "Reused": true,
+    "Input": "{\"metric_25\":true",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "*json.SyntaxError",
+    "Error": "unexpected end of JSON input"
+  },
+  {
+    "Case": 27,
+    "Reused": false,
+    "Input": "{\"metric_25\":true} {}",
+    "Value": {
+    },
+    "ErrorType": "*json.SyntaxError",
+    "Error": "invalid character '{' after top-level value"
+  },
+  {
+    "Case": 27,
+    "Reused": true,
+    "Input": "{\"metric_25\":true} {}",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "*json.SyntaxError",
+    "Error": "invalid character '{' after top-level value"
+  },
+  {
+    "Case": 28,
+    "Reused": false,
+    "Input": "{\"metric_25\":true,}",
+    "Value": {
+    },
+    "ErrorType": "*json.SyntaxError",
+    "Error": "invalid character '}' looking for beginning of object key string"
+  },
+  {
+    "Case": 28,
+    "Reused": true,
+    "Input": "{\"metric_25\":true,}",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "*json.SyntaxError",
+    "Error": "invalid character '}' looking for beginning of object key string"
+  },
+  {
+    "Case": 29,
+    "Reused": false,
+    "Input": "{\"metric_25\":true,\"other_value\":false}",
+    "Value": {
+      "metric25": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 29,
+    "Reused": true,
+    "Input": "{\"metric_25\":true,\"other_value\":false}",
+    "Value": {
+      "metric25": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 30,
+    "Reused": false,
+    "Input": "{\"other_value\":null}",
+    "Value": {
+    },
+    "ErrorType": "",
+    "Error": ""
+  },
+  {
+    "Case": 30,
+    "Reused": true,
+    "Input": "{\"other_value\":null}",
+    "Value": {
+      "metric25": true,
+      "otherValue": true
+    },
+    "ErrorType": "",
+    "Error": ""
+  }
+]
