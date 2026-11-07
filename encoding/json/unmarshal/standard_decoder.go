@@ -30,7 +30,15 @@ func NewStandardDecoder(metadata *shape.Representation) *StandardDecoder {
 	return &StandardDecoder{representation: metadata}
 }
 func (d *StandardDecoder) Unmarshal(data []byte, destination any) error {
-	if !d.presence && (d.representation == nil || !d.representation.Changed()) && !choice.HasEnum(reflect.TypeOf(destination)) && !hasDeclaredTimePolicy(reflect.TypeOf(destination)) && !hasDeclaredInputNames(reflect.TypeOf(destination), d.representation) {
+	typ := reflect.TypeOf(destination)
+	if typ != nil && typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	guards, guardErr := ValidateInputGuards(typ, d.representation)
+	if guardErr != nil {
+		return guardErr
+	}
+	if !guards && !d.presence && (d.representation == nil || !d.representation.Changed()) && !choice.HasEnum(reflect.TypeOf(destination)) && !hasDeclaredTimePolicy(reflect.TypeOf(destination)) && !hasDeclaredInputNames(reflect.TypeOf(destination), d.representation) {
 		return json.Unmarshal(data, destination)
 	}
 	value := reflect.ValueOf(destination)
@@ -57,10 +65,10 @@ func (d *StandardDecoder) Unmarshal(data []byte, destination any) error {
 	if err := json.Unmarshal(data, &valid); err != nil {
 		return err
 	}
-	return decodeStandardRepresentation(data, value, metadata, d.presence)
+	return decodeStandardRepresentation(data, value, metadata, d.presence, guards, nil)
 }
-func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *shape.Representation, presence bool) error {
-	if hasCustomUnmarshalType(value.Type()) || (!presence && (metadata == nil || !metadata.Changed()) && !choice.HasEnum(value.Type()) && !hasDeclaredTimePolicy(value.Type()) && !hasDeclaredInputNames(value.Type(), metadata)) {
+func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *shape.Representation, presence bool, guards bool, ancestors []format.InputScope) error {
+	if hasCustomUnmarshalType(value.Type()) || (!guards && !presence && (metadata == nil || !metadata.Changed()) && !choice.HasEnum(value.Type()) && !hasDeclaredTimePolicy(value.Type()) && !hasDeclaredInputNames(value.Type(), metadata)) {
 		return json.Unmarshal(data, value.Addr().Interface())
 	}
 	if metadata == nil {
@@ -81,7 +89,7 @@ func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *sh
 		if value.IsNil() {
 			value.Set(reflect.New(value.Type().Elem()))
 		}
-		return decodeStandardRepresentation(raw, value.Elem(), metadata.Elem(), presence)
+		return decodeStandardRepresentation(raw, value.Elem(), metadata.Elem(), presence, guards, ancestors)
 	}
 	switch value.Kind() {
 	case reflect.Struct:
@@ -93,9 +101,19 @@ func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *sh
 			return plan.err
 		}
 		fields := plan.fields
-		admitted, err := selectStandardInput(raw, plan.names)
+		admitted, members, err := selectStandardInput(raw, plan.names, ancestors, guards)
 		if err != nil {
 			return err
+		}
+		next := ancestors
+		if guards {
+			goNames := make([]string, len(fields))
+			for i, f := range fields {
+				if f.Field.Tag.Get("internal") != "true" && f.Field.Tag.Get("setMarker") != "true" {
+					goNames[i] = f.Field.Name
+				}
+			}
+			next = append([]format.InputScope{inputPresence(plan.names, members, admitted, goNames)}, ancestors...)
 		}
 		occurrence := 0
 		decoder := json.NewDecoder(bytes.NewReader(raw))
@@ -151,7 +169,7 @@ func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *sh
 			} else if field.Quoted {
 				err = decodeStandardQuoted(member, target)
 			} else {
-				err = decodeStandardRepresentation(member, target, metadata.FieldShapeByIndex(field.Field.Index), presence)
+				err = decodeStandardRepresentation(member, target, metadata.FieldShapeByIndex(field.Field.Index), presence, guards, next)
 			}
 			if err != nil {
 				if hasCustomUnmarshalType(target.Type()) {
@@ -179,7 +197,7 @@ func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *sh
 		return first
 	case reflect.Slice, reflect.Array, reflect.Map:
 		return decodeRawCollection(raw, value, metadata, false, func(member []byte, target reflect.Value, child *shape.Representation) error {
-			return decodeStandardRepresentation(member, target, child, presence)
+			return decodeStandardRepresentation(member, target, child, presence, guards, ancestors)
 		})
 	default:
 		return json.Unmarshal(raw, value.Addr().Interface())

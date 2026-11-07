@@ -77,6 +77,8 @@ type ScannerHooks interface {
 }
 
 type Engine struct {
+	guardEnabled       bool
+	inputScopes        []format.InputScope
 	representation     *xshape.Representation
 	Ctx                context.Context
 	Hooks              ScannerHooks
@@ -143,6 +145,20 @@ func representationElement(r *xshape.Representation, typ reflect.Type) *xshape.R
 }
 
 func (e *Engine) Unmarshal(data []byte, dest interface{}) error {
+	local := *e
+	local.inputScopes = nil
+	typ := reflect.TypeOf(dest)
+	if typ != nil && typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	active, err := ValidateInputGuards(typ, e.representation)
+	if err != nil {
+		return err
+	}
+	local.guardEnabled = active
+	return local.unmarshal(data, dest)
+}
+func (e *Engine) unmarshal(data []byte, dest interface{}) error {
 	if dest == nil {
 		return fmt.Errorf("nil destination")
 	}
@@ -227,9 +243,20 @@ func (e *Engine) unmarshalStructFromDecoder(d *scalarDecoder, structPtr unsafe.P
 	if plan.err != nil {
 		return plan.err
 	}
-	admitted, admissionErr := e.selectNativeInput(d, plan)
+	admitted, members, admissionErr := e.selectNativeInput(d, plan)
 	if admissionErr != nil {
 		return admissionErr
+	}
+	if e.guardEnabled {
+		previous := e.inputScopes
+		goNames := make([]string, len(plan.inputFields))
+		for i, f := range plan.inputFields {
+			if !f.ignore {
+				goNames[i] = f.goName
+			}
+		}
+		e.inputScopes = append([]format.InputScope{inputPresence(plan.inputNames, members, admitted, goNames)}, previous...)
+		defer func() { e.inputScopes = previous }()
 	}
 	occurrence := 0
 	if plan.presence != nil {
@@ -1598,6 +1625,7 @@ type foldField struct {
 }
 
 type fieldPlan struct {
+	goName             string
 	canonicalName      string
 	exactInput         bool
 	timePolicy         *format.Tag
@@ -1733,6 +1761,7 @@ func buildPlan(rType reflect.Type, compileName func(string) string, representati
 
 			name := resolved.Name
 			fp := &fieldPlan{
+				goName:             sf.Name,
 				canonicalName:      name,
 				name:               original.Name,
 				representation:     child,
@@ -1927,14 +1956,28 @@ func assignValue(ptr unsafe.Pointer, rt reflect.Type, parsed interface{}, e *Eng
 			_ = ensurePresenceHolder(ptr, plan.presence)
 		}
 		var selected map[string]bool
-		if plan.inputNames.HasPolicies() {
+		if e.guardEnabled || plan.inputNames.HasPolicies() {
 			var members []format.InputMember
 			var keys []string
 			for key, val := range obj {
 				keys = append(keys, key)
 				members = append(members, format.InputMember{Name: nativeInputName(plan, key), Kind: parsedInputKind(val)})
 			}
-			admitted := plan.inputNames.Select(members)
+			admitted, err := plan.inputNames.SelectScoped(members, e.inputScopes)
+			if err != nil {
+				return err
+			}
+			if e.guardEnabled {
+				previous := e.inputScopes
+				goNames := make([]string, len(plan.inputFields))
+				for i, f := range plan.inputFields {
+					if !f.ignore {
+						goNames[i] = f.goName
+					}
+				}
+				e.inputScopes = append([]format.InputScope{inputPresence(plan.inputNames, members, admitted, goNames)}, previous...)
+				defer func() { e.inputScopes = previous }()
+			}
 			selected = map[string]bool{}
 			for i, key := range keys {
 				selected[key] = admitted[i]
