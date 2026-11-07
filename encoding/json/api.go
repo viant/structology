@@ -66,9 +66,15 @@ func Marshal(value interface{}, opts ...Option) ([]byte, error) {
 // UnmarshalContext unmarshals with an explicit context.
 func UnmarshalContext(ctx context.Context, data []byte, dest interface{}, opts ...Option) error {
 	if len(opts) == 0 && isDefaultContext(ctx) {
+		if jsonunmarshal.StandardBoolSelector(reflect.TypeOf(dest), nil) {
+			return jsonunmarshal.NewStandardDecoder(nil).Unmarshal(data, dest)
+		}
 		return defaultUnmarshalEngine.Unmarshal(data, dest)
 	}
 	cfg := resolveOptions(ctx, opts)
+	if standardSelectorOptions(cfg) && jsonunmarshal.StandardBoolSelector(reflect.TypeOf(dest), cfg.Representation) {
+		return jsonunmarshal.NewStandardDecoder(cfg.Representation).Unmarshal(data, dest)
+	}
 	unknown := jsonunmarshal.IgnoreUnknown
 	if cfg.UnknownFieldPolicy == ErrorOnUnknown {
 		unknown = jsonunmarshal.ErrorOnUnknown

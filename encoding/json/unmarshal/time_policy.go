@@ -46,6 +46,13 @@ func assignDeclaredTime(target reflect.Value, policy *format.Tag, raw []byte) er
 // types that explicitly declare this native scalar policy, retaining lexical
 // members in the existing standard decoder rather than collapsing a body map.
 func hasDeclaredTimePolicy(typ reflect.Type, representations ...*shape.Representation) bool {
+	return hasDeclaredFieldPolicy(typ, func(field reflect.StructField) bool {
+		policy, err := declaredTimePolicy(field)
+		return policy != nil || err != nil
+	}, representations...)
+}
+
+func hasDeclaredFieldPolicy(typ reflect.Type, matches func(reflect.StructField) bool, representations ...*shape.Representation) bool {
 	type key struct {
 		typ      reflect.Type
 		metadata *shape.Representation
@@ -76,7 +83,7 @@ func hasDeclaredTimePolicy(typ reflect.Type, representations ...*shape.Represent
 				if field.PkgPath != "" || field.Tag.Get("json") == "-" || field.Tag.Get("internal") == "true" {
 					continue
 				}
-				if policy, err := declaredTimePolicy(field); policy != nil || err != nil {
+				if matches(field) {
 					return true
 				}
 				if visit(field.Type, child) {

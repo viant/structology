@@ -224,6 +224,9 @@ func (e *Engine) unmarshalStructFromDecoder(d *scalarDecoder, structPtr unsafe.P
 	}
 	d.pos++
 	plan := planFor(rType, e.caseKey, e.compileName, representation)
+	if plan.err != nil {
+		return plan.err
+	}
 	if plan.presence != nil {
 		_ = ensurePresenceHolder(structPtr, plan.presence)
 	}
@@ -1569,6 +1572,7 @@ func (d *scalarDecoder) parseBoolArrayInto(dst *[]bool) error {
 }
 
 type typePlan struct {
+	err          error
 	rType        reflect.Type
 	fieldsByName map[string]*fieldPlan
 	fieldsByFold map[uint64][]foldField
@@ -1661,6 +1665,8 @@ func buildPlan(rType reflect.Type, compileName func(string) string, representati
 		}
 	}
 
+	var inputNames []format.InputName
+	var inputFields []*fieldPlan
 	var collect func(t reflect.Type, parent []*xunsafe.Field, topLevel bool, representation *xshape.Representation)
 	collect = func(t reflect.Type, parent []*xunsafe.Field, topLevel bool, representation *xshape.Representation) {
 		for i := 0; i < t.NumField(); i++ {
@@ -1722,6 +1728,12 @@ func buildPlan(rType reflect.Type, compileName func(string) string, representati
 			}
 			fp.enumeration, fp.enumErr = choice.ParseEnum(sf.Tag, sf.Type)
 			fp.timePolicy, fp.timeErr = declaredTimePolicy(sf)
+			aliases, aliasErr := declaredInputNames(sf.Tag)
+			if aliasErr != nil && p.err == nil {
+				p.err = aliasErr
+			}
+			inputNames = append(inputNames, format.InputName{Name: name, Aliases: aliases})
+			inputFields = append(inputFields, fp)
 			addField(name, fp)
 			if compileName != nil && !resolved.CaseExplicit {
 				alias := compileName(name)
@@ -1733,6 +1745,31 @@ func buildPlan(rType reflect.Type, compileName func(string) string, representati
 	}
 
 	collect(rType, nil, true, representation)
+	if p.err == nil {
+		_, p.err = format.NewInputNameMatcher(inputNames)
+	}
+	if p.err != nil {
+		return p
+	}
+	for i, names := range inputNames {
+		if names.Aliases == "" {
+			continue
+		}
+		for _, alias := range strings.Split(names.Aliases, "|") {
+			for _, candidate := range p.fieldsByFold[foldedHash(alias)] {
+				if candidate.fp != inputFields[i] && strings.EqualFold(candidate.key, alias) {
+					p.err = fmt.Errorf("input alias %q conflicts with another formatted field", alias)
+					return p
+				}
+			}
+			if prior, ok := p.fieldsByName[alias]; ok && prior != inputFields[i] {
+				p.err = fmt.Errorf("input alias %q conflicts with another formatted field", alias)
+				return p
+			}
+			// Declared aliases are exact-only; do not add them to fieldsByFold.
+			p.fieldsByName[alias] = inputFields[i]
+		}
+	}
 	if p.presence != nil {
 		seen := map[*fieldPlan]struct{}{}
 		for _, fp := range p.fieldsByName {
@@ -1846,6 +1883,9 @@ func assignValue(ptr unsafe.Pointer, rt reflect.Type, parsed interface{}, e *Eng
 			return expectedObjectError(rt)
 		}
 		plan := planFor(rt, e.caseKey, e.compileName, representation)
+		if plan.err != nil {
+			return plan.err
+		}
 		if plan.presence != nil {
 			_ = ensurePresenceHolder(ptr, plan.presence)
 		}

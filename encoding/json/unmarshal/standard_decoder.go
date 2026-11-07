@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"strings"
 
 	"github.com/viant/structology/encoding/json/internal/lru"
 	"github.com/viant/tagly/choice"
@@ -31,7 +30,7 @@ func NewStandardDecoder(metadata *shape.Representation) *StandardDecoder {
 	return &StandardDecoder{representation: metadata}
 }
 func (d *StandardDecoder) Unmarshal(data []byte, destination any) error {
-	if !d.presence && (d.representation == nil || !d.representation.Changed()) && !choice.HasEnum(reflect.TypeOf(destination)) && !hasDeclaredTimePolicy(reflect.TypeOf(destination)) {
+	if !d.presence && (d.representation == nil || !d.representation.Changed()) && !choice.HasEnum(reflect.TypeOf(destination)) && !hasDeclaredTimePolicy(reflect.TypeOf(destination)) && !hasDeclaredInputNames(reflect.TypeOf(destination), d.representation) {
 		return json.Unmarshal(data, destination)
 	}
 	value := reflect.ValueOf(destination)
@@ -61,7 +60,7 @@ func (d *StandardDecoder) Unmarshal(data []byte, destination any) error {
 	return decodeStandardRepresentation(data, value, metadata, d.presence)
 }
 func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *shape.Representation, presence bool) error {
-	if hasCustomUnmarshalType(value.Type()) || (!presence && (metadata == nil || !metadata.Changed()) && !choice.HasEnum(value.Type()) && !hasDeclaredTimePolicy(value.Type())) {
+	if hasCustomUnmarshalType(value.Type()) || (!presence && (metadata == nil || !metadata.Changed()) && !choice.HasEnum(value.Type()) && !hasDeclaredTimePolicy(value.Type()) && !hasDeclaredInputNames(value.Type(), metadata)) {
 		return json.Unmarshal(data, value.Addr().Interface())
 	}
 	if metadata == nil {
@@ -110,21 +109,7 @@ func decodeStandardRepresentation(data []byte, value reflect.Value, metadata *sh
 			if err = decoder.Decode(&member); err != nil {
 				return err
 			}
-			index := -1
-			for i := range fields {
-				if fields[i].Name == key {
-					index = i
-					break
-				}
-			}
-			if index < 0 {
-				for i := range fields {
-					if strings.EqualFold(fields[i].Name, key) {
-						index = i
-						break
-					}
-				}
-			}
+			index := plan.names.Match(key)
 			if index < 0 {
 				continue
 			}
@@ -276,6 +261,7 @@ type standardDecodeKey struct {
 	representation *shape.Representation
 }
 type standardDecodePlan struct {
+	names        *format.InputNameMatcher
 	timePolicies []*format.Tag
 	timeErrors   []error
 	fields       []shape.JSONField
@@ -304,10 +290,18 @@ func standardDecodePlanFor(typ reflect.Type, metadata *shape.Representation) *st
 		result.timeErrors = make([]error, len(result.fields))
 		result.enums = make([]*choice.Enum, len(result.fields))
 		result.enumErrors = make([]error, len(result.fields))
+		names := make([]format.InputName, len(result.fields))
 		for i, field := range result.fields {
+			aliases, err := declaredInputNames(field.Field.Tag)
+			if err != nil {
+				result.err = err
+				return result
+			}
+			names[i] = format.InputName{Name: field.Name, Aliases: aliases}
 			result.enums[i], result.enumErrors[i] = choice.ParseEnum(field.Field.Tag, field.Field.ReflectedType)
 			result.timePolicies[i], result.timeErrors[i] = declaredTimePolicy(reflect.StructField{Type: field.Field.ReflectedType, Tag: field.Field.Tag})
 		}
+		result.names, result.err = format.NewInputNameMatcher(names)
 		return result
 	})
 }
