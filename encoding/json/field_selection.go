@@ -327,13 +327,6 @@ func (f *FieldFilter) fields(t reflect.Type, cfg *Options) ([]xshape.JSONField, 
 	if err != nil || cfg == nil {
 		return fields, err
 	}
-	visible := make([]xshape.JSONField, 0, len(fields))
-	for _, field := range fields {
-		if !selectionFieldIgnored(t, field.Field.Index) {
-			visible = append(visible, field)
-		}
-	}
-	fields = visible
 	native := map[string]bool{}
 	if err = f.transformedIndexes(t, nil, native, map[reflect.Type]bool{}); err != nil {
 		return nil, err
