@@ -66,7 +66,7 @@ func (e *Engine) selectedFields(plan *structPlan, path []string) ([]selectedFiel
 			positions = append(positions, i)
 		}
 	}
-	selected, err := tagutil.NameWinners(candidates)
+	selected, err := tagutil.NameWinners(candidates, func(index int) bool { return !e.excludeField(path, all[positions[index]].field) })
 	if err != nil {
 		return nil, err
 	}
