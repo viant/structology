@@ -1744,6 +1744,11 @@ func buildPlan(rType reflect.Type, compileName func(string) string, representati
 			}
 
 			resolved := tagutil.ResolveFieldTag(sf)
+			// Ignored declarations have no input name and cannot participate in
+			// dominance or alias matching, including the shared json:"-" sentinel.
+			if resolved.Ignore {
+				continue
+			}
 			fTag := resolved.Format
 			ignore := resolved.Ignore
 			inline := resolved.Inline
