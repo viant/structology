@@ -153,7 +153,15 @@ func (c *wireCompiler) value(t reflect.Type, path []string, representations ...*
 }
 
 func (c *wireCompiler) fields(target *WireShape, plan *structPlan, path []string, indexes []int, optional bool) error {
-	for _, field := range plan.fields {
+	selected, selectionErr := c.engine.selectedFields(plan, path)
+	if selectionErr != nil {
+		return selectionErr
+	}
+	baseIndexes, baseOptional := indexes, optional
+	for _, selection := range selected {
+		field := selection.field
+		indexes = append(append([]int(nil), baseIndexes...), selection.parents...)
+		optional = baseOptional || selection.optional
 		if field.ignore {
 			continue
 		}

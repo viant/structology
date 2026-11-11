@@ -42,12 +42,13 @@ type Engine struct {
 }
 
 type structPlan struct {
-	hidden    map[string]bool
-	fields    []fieldPlan
-	fastOnly  bool
-	fastOps   []fastFieldOp
-	staticOps []staticFieldOp
-	inlineIdx int
+	resolveNames bool
+	hidden       map[string]bool
+	fields       []fieldPlan
+	fastOnly     bool
+	fastOps      []fastFieldOp
+	staticOps    []staticFieldOp
+	inlineIdx    int
 }
 
 type fieldPlan struct {
@@ -317,6 +318,9 @@ func (e *Engine) appendStructStaticPtr(sess *encoderSession, rt reflect.Type, st
 			inlineVal = inlineVal.Elem()
 		}
 		return e.appendValue(sess, inlineVal, p.representation)
+	}
+	if plan.resolveNames {
+		return e.appendSelectedObject(sess, reflect.NewAt(rt, structPtr).Elem(), plan)
 	}
 	if handled, err := e.tryInlineRawMessage(sess, plan, structPtr); handled || err != nil {
 		return err
@@ -634,6 +638,9 @@ func (e *Engine) appendStructStatic(sess *encoderSession, rv reflect.Value, repr
 		}
 		return e.appendValue(sess, rv.Field(plan.inlineIdx), plan.fields[plan.inlineIdx].representation)
 	}
+	if plan.resolveNames {
+		return e.appendSelectedObject(sess, rv, plan)
+	}
 	structPtr := structPointer(rv, rt)
 	if handled, err := e.tryInlineRawMessage(sess, plan, structPtr); handled || err != nil {
 		return err
@@ -820,6 +827,9 @@ func (e *Engine) appendStructDynamic(sess *encoderSession, rv reflect.Value, rep
 			return nil
 		}
 		return e.appendValue(sess, rv.Field(plan.inlineIdx), plan.fields[plan.inlineIdx].representation)
+	}
+	if plan.resolveNames || e.hasTransform {
+		return e.appendSelectedObject(sess, rv, plan)
 	}
 	if handled, err := e.tryInlineRawMessage(sess, plan, structPtr); handled || err != nil {
 		return err
@@ -1177,6 +1187,17 @@ func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom
 			result.staticOps = append(result.staticOps, compileStaticFieldOp(fp))
 		}
 	}
+	names := map[string]bool{}
+	for _, field := range result.fields {
+		if field.ignore {
+			continue
+		}
+		if field.anonymous || field.inline || names[field.name] {
+			result.resolveNames = true
+			result.fastOnly = false
+		}
+		names[field.name] = true
+	}
 	if len(inlineCandidates) == 1 && !hasExplicitNonInline {
 		result.inlineIdx = inlineCandidates[0]
 	}
@@ -1284,7 +1305,7 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 			}
 			*counter++
 			sess.buf = append(sess.buf, keyLit...)
-			return e.appendStructStaticPtr(sess, rType, fieldPtr)
+			return e.appendStructStaticPtr(sess, rType, fieldPtr, fp.representation)
 		}
 	}
 
@@ -1342,7 +1363,7 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 			}
 			*counter++
 			sess.buf = append(sess.buf, keyLit...)
-			return e.appendStructStaticPtr(sess, elemType, fieldPtr)
+			return e.appendStructStaticPtr(sess, elemType, fieldPtr, fp.representation)
 		}
 	}
 

@@ -1711,6 +1711,8 @@ func buildPlan(rType reflect.Type, compileName func(string) string, representati
 	var inputNames []format.InputName
 	var inputPolicies []*format.Tag
 	var inputFields []*fieldPlan
+	var candidates []tagutil.NameCandidate
+	var compiledNames []string
 	var collect func(t reflect.Type, parent []*xunsafe.Field, topLevel bool, representation *xshape.Representation)
 	collect = func(t reflect.Type, parent []*xunsafe.Field, topLevel bool, representation *xshape.Representation) {
 		for i := 0; i < t.NumField(); i++ {
@@ -1790,17 +1792,38 @@ func buildPlan(rType reflect.Type, compileName func(string) string, representati
 			}
 			inputNames = append(inputNames, format.InputName{Name: name, Aliases: aliases})
 			inputFields = append(inputFields, fp)
-			addField(name, fp)
+			finalName := name
 			if compileName != nil && !resolved.CaseExplicit {
-				alias := compileName(name)
-				if alias != "" && alias != name {
-					addField(alias, fp)
-				}
+				finalName = compileName(name)
 			}
+			compiledNames = append(compiledNames, finalName)
+			candidates = append(candidates, tagutil.NameCandidate{Name: finalName, Depth: len(parent), Explicit: resolved.Explicit})
 		}
 	}
 
 	collect(rType, nil, true, representation)
+	// Resolve declaration dominance before inserting any canonical/folded alias or policy.
+	// Shadowed fields must not be reachable via their old Go-name spelling.
+	winners, winnerErr := tagutil.NameWinners(candidates)
+	if winnerErr != nil && p.err == nil {
+		p.err = winnerErr
+	}
+	var names []format.InputName
+	var policies []*format.Tag
+	var fields []*fieldPlan
+	for i, fp := range inputFields {
+		if !winners[i] {
+			continue
+		}
+		names = append(names, inputNames[i])
+		policies = append(policies, inputPolicies[i])
+		fields = append(fields, fp)
+		addField(inputNames[i].Name, fp)
+		if compiledNames[i] != "" && compiledNames[i] != inputNames[i].Name {
+			addField(compiledNames[i], fp)
+		}
+	}
+	inputNames, inputPolicies, inputFields = names, policies, fields
 	if p.err == nil {
 		p.inputNames, p.err = format.NewInputNameMatcher(inputNames, inputPolicies...)
 		p.inputFields = inputFields
