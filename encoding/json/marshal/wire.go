@@ -232,7 +232,10 @@ func (c *wireCompiler) fields(target *WireShape, plan *structPlan, path []string
 		}
 		if enumeration != nil && enumeration.CollectionItems() == nil {
 			kind := reflect.Int64
-			if enumeration.WireType(false) == "string" {
+			switch enumeration.WireType(false) {
+			case "boolean":
+				kind = reflect.Bool
+			case "string":
 				kind = reflect.String
 			}
 			item = &WireShape{source: field.rType, kind: kind, nullable: field.rType.Kind() == reflect.Pointer, length: -1}

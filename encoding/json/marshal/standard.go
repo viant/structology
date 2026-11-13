@@ -117,7 +117,10 @@ func (c *standardCompiler) value(t reflect.Type, representation *xshape.Represen
 					return nil, fmt.Errorf("enumStyle conflicts with quoted JSON")
 				}
 				kind := reflect.Int64
-				if enumeration.WireType(false) == "string" {
+				switch enumeration.WireType(false) {
+				case "boolean":
+					kind = reflect.Bool
+				case "string":
 					kind = reflect.String
 				}
 				property = &WireShape{source: field.Field.ReflectedType, kind: kind, nullable: field.Field.ReflectedType.Kind() == reflect.Pointer, length: -1}
