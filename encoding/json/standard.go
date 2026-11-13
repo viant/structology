@@ -45,14 +45,19 @@ type IndexedPathFieldExcluder interface {
 }
 
 // UnmarshalStandard keeps encoding/json decoding while opting into effective
-// field metadata. Formatting and native decoder policies belong to Unmarshal.
+// field metadata and optional unknown-field rejection. Other formatting and
+// native decoder policies belong to Unmarshal.
 func UnmarshalStandard(data []byte, destination any, opts ...Option) error {
 	if len(opts) == 0 {
 		return jsonunmarshal.NewStandardDecoder(nil).Unmarshal(data, destination)
 	}
 	cfg := resolveOptions(context.Background(), opts)
-	if cfg.CaseFormat != "" || cfg.FormatTag != nil || cfg.UnknownFieldPolicy != IgnoreUnknown || cfg.NumberPolicy != CoerceNumbers || cfg.NullPolicy != CompatNulls || cfg.DuplicateKeyPolicy != LastWins || cfg.PathUnmarshalHook != nil || cfg.FieldUnmarshalHook != nil {
+	if cfg.CaseFormat != "" || cfg.FormatTag != nil || cfg.NumberPolicy != CoerceNumbers || cfg.NullPolicy != CompatNulls || cfg.DuplicateKeyPolicy != LastWins || cfg.PathUnmarshalHook != nil || cfg.FieldUnmarshalHook != nil {
 		return fmt.Errorf("standard JSON decoding does not accept native decoding transforms")
 	}
-	return jsonunmarshal.NewStandardDecoder(cfg.Representation).WithPresenceTracking(cfg.TrackPresence).Unmarshal(data, destination)
+	policy := jsonunmarshal.IgnoreUnknown
+	if cfg.UnknownFieldPolicy == ErrorOnUnknown {
+		policy = jsonunmarshal.ErrorOnUnknown
+	}
+	return jsonunmarshal.NewStandardDecoder(cfg.Representation).WithPresenceTracking(cfg.TrackPresence).WithUnknownFieldPolicy(policy).Unmarshal(data, destination)
 }
