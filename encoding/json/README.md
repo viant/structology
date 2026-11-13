@@ -47,3 +47,14 @@ hits. Independently rebuilt, equivalent representation objects are distinct keys
 codecs do not rescan/fingerprint the complete schema on every call. Cache eviction
 can cause recompilation without changing behavior. Selecting nil/unchanged metadata
 on a variant engine restores its linked contract rather than retaining the old variant.
+
+### Integer-keyed map wire inspection
+
+Native wire inspection describes ordinary maps with string or signed/unsigned
+integer keys, matching the encoder's existing decimal object-member spelling.
+Named integer key types retain the same behavior, including full-width integer
+boundaries. Inspection does not sample values or change serialization.
+
+Other key kinds still require explicit wire authority. Existing restrictions on
+path-dependent transformations or exclusions inside structured map values remain
+in place; supporting integer keys does not relax those visibility checks.

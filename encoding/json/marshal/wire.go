@@ -125,7 +125,12 @@ func (c *wireCompiler) value(t reflect.Type, path []string, representations ...*
 		}
 		result.element = item
 	case reflect.Map:
-		if t.Key().Kind() != reflect.String {
+		// These keys use the encoder's existing mapKeyString decimal/string
+		// representation. Other key kinds still need explicit wire authority.
+		switch t.Key().Kind() {
+		case reflect.String, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		default:
 			return nil, fmt.Errorf("map key %s needs explicit wire encoding", t.Key())
 		}
 		element := t.Elem()
