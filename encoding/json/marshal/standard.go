@@ -112,7 +112,7 @@ func (c *standardCompiler) value(t reflect.Type, representation *xshape.Represen
 			if e != nil {
 				return nil, e
 			}
-			if enumeration != nil {
+			if enumeration != nil && enumeration.CollectionItems() == nil {
 				if field.Quoted {
 					return nil, fmt.Errorf("enumStyle conflicts with quoted JSON")
 				}

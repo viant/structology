@@ -230,7 +230,7 @@ func (c *wireCompiler) fields(target *WireShape, plan *structPlan, path []string
 		if e != nil {
 			return e
 		}
-		if enumeration != nil {
+		if enumeration != nil && enumeration.CollectionItems() == nil {
 			kind := reflect.Int64
 			if enumeration.WireType(false) == "string" {
 				kind = reflect.String
