@@ -1146,6 +1146,13 @@ func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom
 
 		enumeration, enumErr := choice.ParseEnum(field.Tag, field.Type)
 		if enumeration != nil || enumErr != nil {
+			// Enum storage can be nonprimitive; retain the native omission
+			// predicate when installing its compiled fast field operation.
+			if fp.emptyFn == nil {
+				fp.emptyFn = func(ptr unsafe.Pointer) bool {
+					return isEmptyValue(reflect.NewAt(field.Type, ptr).Elem())
+				}
+			}
 			result.fastOnly = false
 			fast = true
 			fp.fast = true

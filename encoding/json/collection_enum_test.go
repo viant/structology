@@ -73,3 +73,121 @@ func TestCollectionEnumOutputUsesCollectionWireShape(t *testing.T) {
 		}
 	}
 }
+
+func TestCollectionEnumOmitEmptyUsesNativeFieldPlan(t *testing.T) {
+	type record struct {
+		Channels []string `json:"channels,omitempty" mcpEnum:"true" enumAccept:"literal" choice:"DISPLAY" format:"nullable=false"`
+	}
+	for _, standard := range []bool{false, true} {
+		for _, channels := range [][]string{nil, {}, {"DISPLAY"}} {
+			value := &record{Channels: channels}
+			var encoded []byte
+			var err error
+			if standard {
+				encoded, err = MarshalStandard(value)
+			} else {
+				encoder, e := NewMarshaller(reflect.TypeFor[record]())
+				if e != nil {
+					t.Fatal(e)
+				}
+				encoded, err = encoder.Marshal(value)
+			}
+			if err != nil {
+				t.Fatalf("standard=%v: %v", standard, err)
+			}
+			want := `{}`
+			if len(channels) > 0 {
+				want = `{"channels":["DISPLAY"]}`
+			}
+			if string(encoded) != want {
+				t.Fatalf("standard=%v: %s", standard, encoded)
+			}
+		}
+	}
+}
+
+func TestCollectionEnumOutputRejectsUnknownMembers(t *testing.T) {
+	type channels []string
+	type record struct {
+		Channels channels `json:"channels,omitempty" mcpEnum:"true" enumAccept:"literal" choice:"DISPLAY"`
+	}
+	for _, value := range []*record{{Channels: channels{"DISPLAY"}}, {Channels: channels{"UNKNOWN"}}} {
+		for _, standard := range []bool{false, true} {
+			var err error
+			if standard {
+				_, err = MarshalStandard(value)
+			} else {
+				encoder, e := NewMarshaller(reflect.TypeFor[record]())
+				if e != nil {
+					t.Fatal(e)
+				}
+				_, err = encoder.Marshal(value)
+			}
+			if value.Channels[0] == "UNKNOWN" && err == nil {
+				t.Fatalf("standard=%v accepted unknown output", standard)
+			}
+			if value.Channels[0] == "DISPLAY" && err != nil {
+				t.Fatalf("standard=%v named collection: %v", standard, err)
+			}
+		}
+	}
+}
+
+func TestCollectionEnumPointerOutputPreservesOmission(t *testing.T) {
+	type record struct {
+		Channels *[]string `json:"channels,omitempty" mcpEnum:"true" enumAccept:"literal" choice:"DISPLAY"`
+	}
+	empty, valid, null := []string{}, []string{"DISPLAY"}, []string(nil)
+	for _, tc := range []struct {
+		value *[]string
+		want  string
+	}{{nil, `{}`}, {&empty, `{"channels":[]}`}, {&valid, `{"channels":["DISPLAY"]}`}, {&null, `{"channels":null}`}} {
+		for _, standard := range []bool{false, true} {
+			var encoded []byte
+			var err error
+			if standard {
+				encoded, err = MarshalStandard(&record{Channels: tc.value})
+			} else {
+				encoder, e := NewMarshaller(reflect.TypeFor[record]())
+				if e != nil {
+					t.Fatal(e)
+				}
+				encoded, err = encoder.Marshal(&record{Channels: tc.value})
+			}
+			if err != nil || string(encoded) != tc.want {
+				t.Fatalf("standard=%v want=%s got=%s err=%v", standard, tc.want, encoded, err)
+			}
+		}
+	}
+}
+
+func BenchmarkCollectionEnumWholeEncodeWarm(b *testing.B) {
+	type plain struct {
+		Channels []string `json:"channels,omitempty"`
+	}
+	type enumeration struct {
+		Channels []string `json:"channels,omitempty" mcpEnum:"true" enumAccept:"literal" choice:"DISPLAY"`
+	}
+	for _, tc := range []struct {
+		name  string
+		typ   reflect.Type
+		value any
+	}{{"plain omitted", reflect.TypeFor[plain](), &plain{}}, {"enum omitted", reflect.TypeFor[enumeration](), &enumeration{}}, {"plain valid", reflect.TypeFor[plain](), &plain{Channels: []string{"DISPLAY"}}}, {"enum valid", reflect.TypeFor[enumeration](), &enumeration{Channels: []string{"DISPLAY"}}}} {
+		b.Run(tc.name, func(b *testing.B) {
+			encoder, err := NewMarshaller(tc.typ)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if _, err = encoder.Marshal(tc.value); err != nil {
+				b.Fatal(err)
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if _, err = encoder.Marshal(tc.value); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
