@@ -93,7 +93,7 @@ func (e *StandardEncoder) Marshal(value any) ([]byte, error) {
 			return nil, fmt.Errorf("representation expects %s or its pointer, got %s", original, typ)
 		}
 	}
-	state := standardEncoding{encoder: e, active: map[standardPointer]bool{}}
+	state := standardEncoding{encoder: e}
 	return state.append(nil, reflect.ValueOf(value), make([]string, 0, 16), 0, e.representation)
 }
 
@@ -103,13 +103,13 @@ type standardPointer struct {
 	length int
 }
 type standardEncoding struct {
-	encoder *StandardEncoder
-	active  map[standardPointer]bool
+	encoder   *StandardEncoder
+	traversal traversalState
 }
 
 func (s *standardEncoding) append(dst []byte, v reflect.Value, path []string, depth int, representation *xshape.Representation) ([]byte, error) {
-	if depth > 10000 {
-		return nil, fmt.Errorf("JSON value exceeds maximum nesting depth")
+	if err := checkDepth(depth); err != nil {
+		return nil, err
 	}
 	if !v.IsValid() {
 		return append(dst, "null"...), nil
@@ -123,23 +123,11 @@ func (s *standardEncoding) append(dst []byte, v reflect.Value, path []string, de
 	if custom, ok := s.custom(v); ok {
 		return s.scalar(dst, custom)
 	}
-	if v.Kind() == reflect.Pointer || v.Kind() == reflect.Slice || v.Kind() == reflect.Map {
-		var pointer uintptr
-		if v.Kind() == reflect.Map {
-			pointer = uintptr(v.UnsafePointer())
-		} else {
-			pointer = v.Pointer()
-		}
-		key := standardPointer{typ: v.Type(), ptr: pointer}
-		if v.Kind() == reflect.Slice {
-			key.length = v.Len()
-		}
-		if s.active[key] {
-			return nil, &json.UnsupportedValueError{Value: v, Str: "encountered a cycle via " + v.Type().String()}
-		}
-		s.active[key] = true
-		defer delete(s.active, key)
+	if err := s.traversal.enter(v, depth); err != nil {
+		return nil, err
 	}
+	defer s.traversal.leave(v)
+
 	switch v.Kind() {
 	case reflect.Interface, reflect.Pointer:
 		if representation != nil && representation.Original() == v.Type() {

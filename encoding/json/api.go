@@ -42,6 +42,9 @@ func MarshalContext(ctx context.Context, value interface{}, opts ...Option) ([]b
 		return defaultMarshalEngine.Marshal(value)
 	}
 	cfg := resolveOptions(ctx, opts)
+	if err := cfg.Ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	m := cfg.marshalEngine()
 	if err := m.ExcludeFields(reflect.TypeOf(value), cfg.ExcludedFields); err != nil {
@@ -49,18 +52,18 @@ func MarshalContext(ctx context.Context, value interface{}, opts ...Option) ([]b
 	}
 	if m.NameTransform == nil && m.Exclude == nil {
 		if elemType, ptr, ok := pointerStructMeta(value); ok {
-			return m.MarshalTypedPtr(nil, elemType, ptr)
+			return m.MarshalTypedPtrContext(cfg.Ctx, nil, elemType, ptr)
 		}
 		if elemType, ptr, ok := structValueMeta(value); ok {
-			return m.MarshalTypedPtr(nil, elemType, ptr)
+			return m.MarshalTypedPtrContext(cfg.Ctx, nil, elemType, ptr)
 		}
 	}
-	return m.Marshal(value)
+	return m.MarshalContext(cfg.Ctx, value)
 }
 
 // Marshal marshals using context.Background unless overridden by options.
 func Marshal(value interface{}, opts ...Option) ([]byte, error) {
-	return MarshalContext(context.Background(), value, opts...)
+	return MarshalContext(nil, value, opts...)
 }
 
 // UnmarshalContext unmarshals with an explicit context.

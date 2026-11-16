@@ -2,6 +2,7 @@ package marshal
 
 import (
 	"bytes"
+	"context"
 	"encoding"
 	stdjson "encoding/json"
 	"fmt"
@@ -96,8 +97,10 @@ type pathStack struct {
 }
 
 type encoderSession struct {
-	buf  []byte
-	path pathStack
+	buf       []byte
+	path      pathStack
+	ctx       context.Context
+	traversal traversalState
 }
 
 var (
@@ -187,18 +190,32 @@ func representationElem(r *xshape.Representation) *xshape.Representation {
 }
 
 func (e *Engine) Marshal(value interface{}) ([]byte, error) {
+	return e.MarshalContext(context.Background(), value)
+}
+
+func (e *Engine) MarshalContext(ctx context.Context, value interface{}) ([]byte, error) {
+	if err := contextError(ctx); err != nil {
+		return nil, err
+	}
 	if err := e.validateRepresentation(reflect.TypeOf(value)); err != nil {
 		return nil, err
 	}
 	sess := acquireSession()
+	sess.ctx = ctx
 	defer releaseSession(sess)
 	if value == nil {
 		sess.buf = append(sess.buf, "null"...)
+		if err := sess.checkContext(); err != nil {
+			return nil, err
+		}
 		out := append([]byte(nil), sess.buf...)
 		return out, nil
 	}
 	rv := reflect.ValueOf(value)
 	if err := e.appendValue(sess, rv, e.representation); err != nil {
+		return nil, err
+	}
+	if err := sess.checkContext(); err != nil {
 		return nil, err
 	}
 	out := append([]byte(nil), sess.buf...)
@@ -207,17 +224,30 @@ func (e *Engine) Marshal(value interface{}) ([]byte, error) {
 
 // MarshalTo appends marshaled JSON to dst and returns the resulting slice.
 func (e *Engine) MarshalTo(dst []byte, value interface{}) ([]byte, error) {
+	return e.MarshalToContext(context.Background(), dst, value)
+}
+
+func (e *Engine) MarshalToContext(ctx context.Context, dst []byte, value interface{}) ([]byte, error) {
+	if err := contextError(ctx); err != nil {
+		return nil, err
+	}
 	if err := e.validateRepresentation(reflect.TypeOf(value)); err != nil {
 		return nil, err
 	}
 	dst = ensureSpare(dst, 128)
-	sess := encoderSession{buf: dst}
+	sess := encoderSession{buf: dst, ctx: ctx}
 	if value == nil {
 		sess.buf = append(sess.buf, "null"...)
+		if err := sess.checkContext(); err != nil {
+			return nil, err
+		}
 		return sess.buf, nil
 	}
 	rv := reflect.ValueOf(value)
 	if err := e.appendValue(&sess, rv, e.representation); err != nil {
+		return nil, err
+	}
+	if err := sess.checkContext(); err != nil {
 		return nil, err
 	}
 	return sess.buf, nil
@@ -251,46 +281,76 @@ func (e *Engine) MarshalTypedPtr(dst []byte, elemType reflect.Type, ptr unsafe.P
 	return e.marshalPtrTyped(dst, elemType, ptr)
 }
 
+func (e *Engine) MarshalTypedPtrContext(ctx context.Context, dst []byte, elemType reflect.Type, ptr unsafe.Pointer) ([]byte, error) {
+	return e.marshalPtrTypedContext(ctx, dst, elemType, ptr)
+}
+
 func (e *Engine) marshalPtrTyped(dst []byte, elemType reflect.Type, ptr unsafe.Pointer) ([]byte, error) {
+	return e.marshalPtrTypedContext(context.Background(), dst, elemType, ptr)
+}
+
+func (e *Engine) marshalPtrTypedContext(ctx context.Context, dst []byte, elemType reflect.Type, ptr unsafe.Pointer) ([]byte, error) {
+	if err := contextError(ctx); err != nil {
+		return nil, err
+	}
 	if err := e.validateRepresentation(elemType); err != nil {
 		return nil, err
 	}
 	dst = ensureSpare(dst, 128)
 	if ptr == nil {
+		if err := contextError(ctx); err != nil {
+			return nil, err
+		}
 		return append(dst, "null"...), nil
 	}
-	if e.hasCustomMarshalerType(elemType) {
-		sess := encoderSession{buf: dst}
-		root := reflect.NewAt(elemType, ptr).Elem()
-		if handled, err := e.tryAppendCustomMarshaler(&sess, root); handled || err != nil {
+	if !e.hasTransform && !e.hasExclude && elemType.Kind() == reflect.Struct && !e.hasCustomMarshalerType(elemType) {
+		plan := e.getStaticPlan(elemType, e.representation)
+		if plan.fastOnly {
+			out, err := e.appendStructFastOnly(ctx, dst, plan, ptr)
 			if err != nil {
 				return nil, err
 			}
-			return sess.buf, nil
+			if err = contextError(ctx); err != nil {
+				return nil, err
+			}
+			return out, nil
 		}
 	}
-	if !e.hasTransform && !e.hasExclude {
-		if elemType.Kind() == reflect.Struct {
-			plan := e.getStaticPlan(elemType, e.representation)
-			if plan.fastOnly {
-				return e.appendStructFastOnly(dst, plan, ptr)
+	sess := encoderSession{buf: dst, ctx: ctx}
+	root := reflect.NewAt(elemType, ptr)
+	if err := sess.enter(root); err != nil {
+		return nil, err
+	}
+	defer sess.leave(root)
+	if e.hasCustomMarshalerType(elemType) {
+		if handled, err := e.tryAppendCustomMarshaler(&sess, root.Elem()); handled || err != nil {
+			if err != nil {
+				return nil, err
 			}
-			sess := encoderSession{buf: dst}
-			if err := e.appendStructStaticPtr(&sess, elemType, ptr, e.representation); err != nil {
+			if err = sess.checkContext(); err != nil {
 				return nil, err
 			}
 			return sess.buf, nil
 		}
 	}
-	sess := encoderSession{buf: dst}
-	root := reflect.NewAt(elemType, ptr).Elem()
-	if err := e.appendValue(&sess, root, e.representation); err != nil {
+	if !e.hasTransform && !e.hasExclude && elemType.Kind() == reflect.Struct {
+		if err := e.appendStructStaticPtr(&sess, elemType, ptr, e.representation); err != nil {
+			return nil, err
+		}
+	} else if err := e.appendValue(&sess, root.Elem(), e.representation); err != nil {
+		return nil, err
+	}
+	if err := sess.checkContext(); err != nil {
 		return nil, err
 	}
 	return sess.buf, nil
 }
 
 func (e *Engine) appendStructStaticPtr(sess *encoderSession, rt reflect.Type, structPtr unsafe.Pointer, representations ...*xshape.Representation) error {
+	if err := sess.enter(reflect.Value{}); err != nil {
+		return err
+	}
+	defer sess.leave(reflect.Value{})
 	representation := selectedRepresentation(representations)
 	if e.hasCustomMarshalerType(rt) {
 		if handled, err := e.tryAppendCustomMarshaler(sess, reflect.NewAt(rt, structPtr).Elem()); handled || err != nil {
@@ -309,15 +369,7 @@ func (e *Engine) appendStructStaticPtr(sess *encoderSession, rt reflect.Type, st
 			sess.buf = append(sess.buf, raw...)
 			return nil
 		}
-		inlineVal := reflect.NewAt(p.rType, p.xField.Pointer(structPtr)).Elem()
-		for inlineVal.Kind() == reflect.Interface || inlineVal.Kind() == reflect.Ptr {
-			if inlineVal.IsNil() {
-				sess.buf = append(sess.buf, "null"...)
-				return nil
-			}
-			inlineVal = inlineVal.Elem()
-		}
-		return e.appendValue(sess, inlineVal, p.representation)
+		return e.appendValue(sess, reflect.NewAt(p.rType, p.xField.Pointer(structPtr)).Elem(), p.representation)
 	}
 	if plan.resolveNames {
 		return e.appendSelectedObject(sess, reflect.NewAt(rt, structPtr).Elem(), plan)
@@ -328,6 +380,9 @@ func (e *Engine) appendStructStaticPtr(sess *encoderSession, rt reflect.Type, st
 	sess.buf = append(sess.buf, '{')
 	fieldCounter := 0
 	for i := range plan.staticOps {
+		if err := sess.checkContext(); err != nil {
+			return err
+		}
 		if err := plan.staticOps[i](e, sess, structPtr, &fieldCounter); err != nil {
 			return err
 		}
@@ -336,10 +391,13 @@ func (e *Engine) appendStructStaticPtr(sess *encoderSession, rt reflect.Type, st
 	return nil
 }
 
-func (e *Engine) appendStructFastOnly(dst []byte, plan *structPlan, structPtr unsafe.Pointer) ([]byte, error) {
+func (e *Engine) appendStructFastOnly(ctx context.Context, dst []byte, plan *structPlan, structPtr unsafe.Pointer) ([]byte, error) {
 	dst = append(dst, '{')
 	fieldCounter := 0
 	for i := range plan.fastOps {
+		if err := contextError(ctx); err != nil {
+			return nil, err
+		}
 		op := &plan.fastOps[i]
 		fieldPtr := op.xField.Pointer(structPtr)
 		if (op.omit || e.omitEmpty) && op.emptyFn(fieldPtr) {
@@ -386,6 +444,9 @@ func releaseSession(s *encoderSession) {
 	}
 	s.buf = s.buf[:0]
 	s.path.reset()
+	s.ctx = nil
+	clear(s.traversal.active)
+	s.traversal.depth = 0
 	sessionPool.Put(s)
 }
 
@@ -421,6 +482,12 @@ func (e *Engine) currentPath(sess *encoderSession) []string {
 }
 
 func (e *Engine) appendValue(sess *encoderSession, rv reflect.Value, representations ...*xshape.Representation) error {
+	if err := checkDepth(sess.traversal.depth); err != nil {
+		return err
+	}
+	if err := sess.checkContext(); err != nil {
+		return err
+	}
 	representation := selectedRepresentation(representations)
 	if !rv.IsValid() {
 		sess.buf = append(sess.buf, "null"...)
@@ -431,12 +498,35 @@ func (e *Engine) appendValue(sess *encoderSession, rv reflect.Value, representat
 			return err
 		}
 	}
-	for rv.Kind() == reflect.Interface || rv.Kind() == reflect.Ptr {
+	return e.appendUnwrappedValue(sess, rv, representation)
+}
+
+// appendUnwrappedValue retains the original custom-codec admission boundary:
+// pointer/interface descent is guarded but does not readmit a concrete codec.
+func (e *Engine) appendUnwrappedValue(sess *encoderSession, rv reflect.Value, representation *xshape.Representation) error {
+	if err := sess.checkContext(); err != nil {
+		return err
+	}
+
+	if err := checkDepth(sess.traversal.depth); err != nil {
+		return err
+	}
+	switch rv.Kind() {
+	case reflect.Pointer, reflect.Interface, reflect.Struct, reflect.Slice, reflect.Array, reflect.Map:
+		if err := sess.enter(rv); err != nil {
+			return err
+		}
+		defer sess.leave(rv)
+	}
+	if rv.Kind() == reflect.Interface || rv.Kind() == reflect.Ptr {
 		if rv.IsNil() {
 			sess.buf = append(sess.buf, "null"...)
 			return nil
 		}
-		rv = rv.Elem()
+		if representation != nil && representation.Original() == rv.Type() {
+			representation = representation.Elem()
+		}
+		return e.appendUnwrappedValue(sess, rv.Elem(), representation)
 	}
 
 	switch rv.Kind() {
@@ -505,7 +595,15 @@ func (e *Engine) appendValue(sess *encoderSession, rv reflect.Value, representat
 	}
 }
 
-func (e *Engine) tryAppendCustomMarshaler(sess *encoderSession, rv reflect.Value) (bool, error) {
+func (e *Engine) tryAppendCustomMarshaler(sess *encoderSession, rv reflect.Value) (handled bool, err error) {
+	if err = sess.checkContext(); err != nil {
+		return false, err
+	}
+	defer func() {
+		if err == nil {
+			err = sess.checkContext()
+		}
+	}()
 	if !rv.IsValid() {
 		return false, nil
 	}
@@ -648,6 +746,9 @@ func (e *Engine) appendStructStatic(sess *encoderSession, rv reflect.Value, repr
 	sess.buf = append(sess.buf, '{')
 	fieldCounter := 0
 	for i := range plan.fields {
+		if err := sess.checkContext(); err != nil {
+			return err
+		}
 		p := &plan.fields[i]
 		if p.ignore {
 			continue
@@ -666,26 +767,8 @@ func (e *Engine) appendStructStatic(sess *encoderSession, rv reflect.Value, repr
 				sess.buf = append(sess.buf, raw...)
 				continue
 			}
-			inlineVal := rv.Field(p.index)
-			skipInline := false
-			for inlineVal.Kind() == reflect.Interface || inlineVal.Kind() == reflect.Ptr {
-				if inlineVal.IsNil() {
-					skipInline = true
-					break
-				}
-				inlineVal = inlineVal.Elem()
-			}
-			if !skipInline {
-				switch inlineVal.Kind() {
-				case reflect.Struct:
-					if err := e.appendStructFieldsStatic(sess, inlineVal, &fieldCounter, p.representation); err != nil {
-						return err
-					}
-				case reflect.Map:
-					if err := e.appendMapFields(sess, inlineVal, &fieldCounter, p.representation); err != nil {
-						return err
-					}
-				}
+			if err := e.appendInlineFields(sess, rv.Field(p.index), &fieldCounter, p.representation, false); err != nil {
+				return err
 			}
 			continue
 		}
@@ -704,8 +787,16 @@ func (e *Engine) appendStructStatic(sess *encoderSession, rv reflect.Value, repr
 			sess.buf = append(sess.buf, ',')
 		}
 		fieldCounter++
+		if err := checkDepth(sess.traversal.depth); err != nil {
+			return err
+		}
 		sess.buf = append(sess.buf, p.keyLit...)
 		if p.fast {
+			if p.kind == reflect.Pointer && !p.emptyFn(fieldPtr) {
+				if err := checkDepth(sess.traversal.depth + 1); err != nil {
+					return err
+				}
+			}
 			if err := p.appendFn(&sess.buf, fieldPtr); err != nil {
 				return err
 			}
@@ -736,6 +827,9 @@ func (e *Engine) appendStructFieldsStatic(sess *encoderSession, rv reflect.Value
 	}
 	structPtr := structPointer(rv, rt)
 	for i := range plan.fields {
+		if err := sess.checkContext(); err != nil {
+			return err
+		}
 		p := &plan.fields[i]
 		if p.ignore {
 			continue
@@ -754,26 +848,8 @@ func (e *Engine) appendStructFieldsStatic(sess *encoderSession, rv reflect.Value
 				sess.buf = append(sess.buf, raw...)
 				continue
 			}
-			inlineVal := rv.Field(p.index)
-			skipInline := false
-			for inlineVal.Kind() == reflect.Interface || inlineVal.Kind() == reflect.Ptr {
-				if inlineVal.IsNil() {
-					skipInline = true
-					break
-				}
-				inlineVal = inlineVal.Elem()
-			}
-			if !skipInline {
-				switch inlineVal.Kind() {
-				case reflect.Struct:
-					if err := e.appendStructFieldsStatic(sess, inlineVal, counter, p.representation); err != nil {
-						return err
-					}
-				case reflect.Map:
-					if err := e.appendMapFields(sess, inlineVal, counter, p.representation); err != nil {
-						return err
-					}
-				}
+			if err := e.appendInlineFields(sess, rv.Field(p.index), counter, p.representation, false); err != nil {
+				return err
 			}
 			continue
 		}
@@ -792,8 +868,16 @@ func (e *Engine) appendStructFieldsStatic(sess *encoderSession, rv reflect.Value
 			sess.buf = append(sess.buf, ',')
 		}
 		*counter++
+		if err := checkDepth(sess.traversal.depth); err != nil {
+			return err
+		}
 		sess.buf = append(sess.buf, p.keyLit...)
 		if p.fast {
+			if p.kind == reflect.Pointer && !p.emptyFn(fieldPtr) {
+				if err := checkDepth(sess.traversal.depth + 1); err != nil {
+					return err
+				}
+			}
 			if err := p.appendFn(&sess.buf, fieldPtr); err != nil {
 				return err
 			}
@@ -846,6 +930,9 @@ func (e *Engine) appendStructDynamic(sess *encoderSession, rv reflect.Value, rep
 func (e *Engine) appendStructFieldsDynamic(sess *encoderSession, rv reflect.Value, plan *structPlan, structPtr unsafe.Pointer, counter *int) error {
 	path := e.currentPath(sess)
 	for i := range plan.fields {
+		if err := sess.checkContext(); err != nil {
+			return err
+		}
 		p := &plan.fields[i]
 		if p.ignore {
 			continue
@@ -864,27 +951,8 @@ func (e *Engine) appendStructFieldsDynamic(sess *encoderSession, rv reflect.Valu
 				sess.buf = append(sess.buf, raw...)
 				continue
 			}
-			inlineVal := reflect.NewAt(p.rType, p.xField.Pointer(structPtr)).Elem()
-			for inlineVal.Kind() == reflect.Interface || inlineVal.Kind() == reflect.Ptr {
-				if inlineVal.IsNil() {
-					inlineVal = reflect.Value{}
-					break
-				}
-				inlineVal = inlineVal.Elem()
-			}
-			if inlineVal.IsValid() {
-				switch inlineVal.Kind() {
-				case reflect.Struct:
-					inlineVal, inlinePtr := addressableStruct(inlineVal)
-					inlinePlan := e.getDynamicPlan(inlineVal.Type(), p.representation)
-					if err := e.appendStructFieldsDynamic(sess, inlineVal, inlinePlan, inlinePtr, counter); err != nil {
-						return err
-					}
-				case reflect.Map:
-					if err := e.appendMapFields(sess, inlineVal, counter, p.representation); err != nil {
-						return err
-					}
-				}
+			if err := e.appendInlineFields(sess, reflect.NewAt(p.rType, p.xField.Pointer(structPtr)).Elem(), counter, p.representation, true); err != nil {
+				return err
 			}
 			continue
 		}
@@ -910,9 +978,17 @@ func (e *Engine) appendStructFieldsDynamic(sess *encoderSession, rv reflect.Valu
 			sess.buf = append(sess.buf, ',')
 		}
 		*counter++
+		if err := checkDepth(sess.traversal.depth); err != nil {
+			return err
+		}
 		sess.buf = strconv.AppendQuote(sess.buf, name)
 		sess.buf = append(sess.buf, ':')
 		if p.fast {
+			if p.kind == reflect.Pointer && !p.emptyFn(fieldPtr) {
+				if err := checkDepth(sess.traversal.depth + 1); err != nil {
+					return err
+				}
+			}
 			if err := p.appendFn(&sess.buf, fieldPtr); err != nil {
 				return err
 			}
@@ -1002,6 +1078,9 @@ func (e *Engine) appendMapFields(sess *encoderSession, rv reflect.Value, counter
 	path := e.currentPath(sess)
 	iter := rv.MapRange()
 	for iter.Next() {
+		if err := sess.checkContext(); err != nil {
+			return err
+		}
 		name := mapKeyString(iter.Key())
 		if (e.hasTransform || e.hasExclude) && e.Exclude != nil && e.Exclude(path, name) {
 			continue
@@ -1234,20 +1313,7 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 		}
 		rType := fp.rType
 		return func(e *Engine, sess *encoderSession, structPtr unsafe.Pointer, counter *int) error {
-			inlineVal := reflect.NewAt(rType, xField.Pointer(structPtr)).Elem()
-			for inlineVal.Kind() == reflect.Interface || inlineVal.Kind() == reflect.Ptr {
-				if inlineVal.IsNil() {
-					return nil
-				}
-				inlineVal = inlineVal.Elem()
-			}
-			switch inlineVal.Kind() {
-			case reflect.Struct:
-				return e.appendStructFieldsStatic(sess, inlineVal, counter, fp.representation)
-			case reflect.Map:
-				return e.appendMapFields(sess, inlineVal, counter, fp.representation)
-			}
-			return nil
+			return e.appendInlineFields(sess, reflect.NewAt(rType, xField.Pointer(structPtr)).Elem(), counter, fp.representation, false)
 		}
 	}
 
@@ -1268,10 +1334,18 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 				sess.buf = append(sess.buf, ',')
 			}
 			*counter++
+			if err := checkDepth(sess.traversal.depth); err != nil {
+				return err
+			}
 			sess.buf = append(sess.buf, keyLit...)
 			if nullable && emptyFn(fieldPtr) {
 				sess.buf = append(sess.buf, "null"...)
 				return nil
+			}
+			if fp.kind == reflect.Pointer && !emptyFn(fieldPtr) {
+				if err := checkDepth(sess.traversal.depth + 1); err != nil {
+					return err
+				}
 			}
 			return appendFn(&sess.buf, fieldPtr)
 		}
@@ -1292,6 +1366,9 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 					sess.buf = append(sess.buf, ',')
 				}
 				*counter++
+				if err := checkDepth(sess.traversal.depth); err != nil {
+					return err
+				}
 				sess.buf = append(sess.buf, keyLit...)
 				if nullable && ts.IsZero() {
 					sess.buf = append(sess.buf, "null"...)
@@ -1311,6 +1388,9 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 				sess.buf = append(sess.buf, ',')
 			}
 			*counter++
+			if err := checkDepth(sess.traversal.depth); err != nil {
+				return err
+			}
 			sess.buf = append(sess.buf, keyLit...)
 			return e.appendStructStaticPtr(sess, rType, fieldPtr, fp.representation)
 		}
@@ -1330,6 +1410,9 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 						sess.buf = append(sess.buf, ',')
 					}
 					*counter++
+					if err := checkDepth(sess.traversal.depth); err != nil {
+						return err
+					}
 					sess.buf = append(sess.buf, keyLit...)
 					sess.buf = append(sess.buf, "null"...)
 					return nil
@@ -1338,6 +1421,9 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 					sess.buf = append(sess.buf, ',')
 				}
 				*counter++
+				if err := checkDepth(sess.traversal.depth); err != nil {
+					return err
+				}
 				sess.buf = append(sess.buf, keyLit...)
 				layout := e.timeLayout
 				if fieldLayout != "" {
@@ -1361,6 +1447,9 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 					sess.buf = append(sess.buf, ',')
 				}
 				*counter++
+				if err := checkDepth(sess.traversal.depth); err != nil {
+					return err
+				}
 				sess.buf = append(sess.buf, keyLit...)
 				sess.buf = append(sess.buf, "null"...)
 				return nil
@@ -1369,7 +1458,15 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 				sess.buf = append(sess.buf, ',')
 			}
 			*counter++
+			if err := checkDepth(sess.traversal.depth); err != nil {
+				return err
+			}
 			sess.buf = append(sess.buf, keyLit...)
+			pointer := reflect.NewAt(elemType, fieldPtr)
+			if err := sess.enter(pointer); err != nil {
+				return err
+			}
+			defer sess.leave(pointer)
 			return e.appendStructStaticPtr(sess, elemType, fieldPtr, fp.representation)
 		}
 	}
@@ -1387,6 +1484,9 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 						sess.buf = append(sess.buf, ',')
 					}
 					*counter++
+					if err := checkDepth(sess.traversal.depth); err != nil {
+						return err
+					}
 					sess.buf = append(sess.buf, keyLit...)
 					if e.nilSliceNull {
 						sess.buf = append(sess.buf, "null"...)
@@ -1399,8 +1499,16 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 					sess.buf = append(sess.buf, ',')
 				}
 				*counter++
+				if err := checkDepth(sess.traversal.depth); err != nil {
+					return err
+				}
 				sess.buf = append(sess.buf, keyLit...)
-				return emit(&sess.buf, fieldPtr)
+				if fv.Len() > 0 {
+					if err := checkDepth(sess.traversal.depth + 1); err != nil {
+						return err
+					}
+				}
+				return emit(&sess.buf, fieldPtr, sess.ctx)
 			}
 		}
 	}
@@ -1419,14 +1527,25 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 					sess.buf = append(sess.buf, ',')
 				}
 				*counter++
+				if err := checkDepth(sess.traversal.depth); err != nil {
+					return err
+				}
 				sess.buf = append(sess.buf, keyLit...)
 				if m == nil {
 					sess.buf = append(sess.buf, "null"...)
 					return nil
 				}
+				if len(m) > 0 {
+					if err := checkDepth(sess.traversal.depth + 1); err != nil {
+						return err
+					}
+				}
 				sess.buf = append(sess.buf, '{')
 				idx := 0
 				for k, v := range m {
+					if err := sess.checkContext(); err != nil {
+						return err
+					}
 					if idx > 0 {
 						sess.buf = append(sess.buf, ',')
 					}
@@ -1440,38 +1559,7 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 			}
 		}
 		if elemKind == reflect.Interface {
-			return func(e *Engine, sess *encoderSession, structPtr unsafe.Pointer, counter *int) error {
-				m := *(*map[string]interface{})(xField.Pointer(structPtr))
-				if omit || e.omitEmpty {
-					if len(m) == 0 {
-						return nil
-					}
-				}
-				if *counter > 0 {
-					sess.buf = append(sess.buf, ',')
-				}
-				*counter++
-				sess.buf = append(sess.buf, keyLit...)
-				if m == nil {
-					sess.buf = append(sess.buf, "null"...)
-					return nil
-				}
-				sess.buf = append(sess.buf, '{')
-				idx := 0
-				for k, v := range m {
-					if idx > 0 {
-						sess.buf = append(sess.buf, ',')
-					}
-					idx++
-					sess.buf = strconv.AppendQuote(sess.buf, k)
-					sess.buf = append(sess.buf, ':')
-					if err := e.appendValue(sess, reflect.ValueOf(v), fp.representation); err != nil {
-						return err
-					}
-				}
-				sess.buf = append(sess.buf, '}')
-				return nil
-			}
+			return compileValueFieldOp(fp)
 		}
 	}
 
@@ -1493,6 +1581,9 @@ func compileValueFieldOp(fp fieldPlan) staticFieldOp {
 			sess.buf = append(sess.buf, ',')
 		}
 		*counter++
+		if err := checkDepth(sess.traversal.depth); err != nil {
+			return err
+		}
 		sess.buf = append(sess.buf, keyLit...)
 		if nullable && isEmptyValue(fv) {
 			sess.buf = append(sess.buf, "null"...)
@@ -1502,7 +1593,7 @@ func compileValueFieldOp(fp fieldPlan) staticFieldOp {
 	}
 }
 
-func primitiveSliceAppendFunc(elemKind reflect.Kind) func(*[]byte, unsafe.Pointer) error {
+func primitiveSliceAppendFunc(elemKind reflect.Kind) func(*[]byte, unsafe.Pointer, context.Context) error {
 	switch elemKind {
 	case reflect.String:
 		return appendStringSlice
@@ -1537,10 +1628,15 @@ func primitiveSliceAppendFunc(elemKind reflect.Kind) func(*[]byte, unsafe.Pointe
 	}
 }
 
-func appendStringSlice(buf *[]byte, fieldPtr unsafe.Pointer) error {
+func appendStringSlice(buf *[]byte, fieldPtr unsafe.Pointer, ctx context.Context) error {
 	items := *(*[]string)(fieldPtr)
 	*buf = append(*buf, '[')
 	for i := 0; i < len(items); i++ {
+		if i&255 == 0 {
+			if err := contextError(ctx); err != nil {
+				return err
+			}
+		}
 		if i > 0 {
 			*buf = append(*buf, ',')
 		}
@@ -1549,10 +1645,15 @@ func appendStringSlice(buf *[]byte, fieldPtr unsafe.Pointer) error {
 	*buf = append(*buf, ']')
 	return nil
 }
-func appendBoolSlice(buf *[]byte, fieldPtr unsafe.Pointer) error {
+func appendBoolSlice(buf *[]byte, fieldPtr unsafe.Pointer, ctx context.Context) error {
 	items := *(*[]bool)(fieldPtr)
 	*buf = append(*buf, '[')
 	for i := 0; i < len(items); i++ {
+		if i&255 == 0 {
+			if err := contextError(ctx); err != nil {
+				return err
+			}
+		}
 		if i > 0 {
 			*buf = append(*buf, ',')
 		}
@@ -1565,10 +1666,15 @@ func appendBoolSlice(buf *[]byte, fieldPtr unsafe.Pointer) error {
 	*buf = append(*buf, ']')
 	return nil
 }
-func appendIntSlice(buf *[]byte, fieldPtr unsafe.Pointer) error {
+func appendIntSlice(buf *[]byte, fieldPtr unsafe.Pointer, ctx context.Context) error {
 	items := *(*[]int)(fieldPtr)
 	*buf = append(*buf, '[')
 	for i := 0; i < len(items); i++ {
+		if i&255 == 0 {
+			if err := contextError(ctx); err != nil {
+				return err
+			}
+		}
 		if i > 0 {
 			*buf = append(*buf, ',')
 		}
@@ -1577,10 +1683,15 @@ func appendIntSlice(buf *[]byte, fieldPtr unsafe.Pointer) error {
 	*buf = append(*buf, ']')
 	return nil
 }
-func appendInt8Slice(buf *[]byte, fieldPtr unsafe.Pointer) error {
+func appendInt8Slice(buf *[]byte, fieldPtr unsafe.Pointer, ctx context.Context) error {
 	items := *(*[]int8)(fieldPtr)
 	*buf = append(*buf, '[')
 	for i := 0; i < len(items); i++ {
+		if i&255 == 0 {
+			if err := contextError(ctx); err != nil {
+				return err
+			}
+		}
 		if i > 0 {
 			*buf = append(*buf, ',')
 		}
@@ -1589,10 +1700,15 @@ func appendInt8Slice(buf *[]byte, fieldPtr unsafe.Pointer) error {
 	*buf = append(*buf, ']')
 	return nil
 }
-func appendInt16Slice(buf *[]byte, fieldPtr unsafe.Pointer) error {
+func appendInt16Slice(buf *[]byte, fieldPtr unsafe.Pointer, ctx context.Context) error {
 	items := *(*[]int16)(fieldPtr)
 	*buf = append(*buf, '[')
 	for i := 0; i < len(items); i++ {
+		if i&255 == 0 {
+			if err := contextError(ctx); err != nil {
+				return err
+			}
+		}
 		if i > 0 {
 			*buf = append(*buf, ',')
 		}
@@ -1601,10 +1717,15 @@ func appendInt16Slice(buf *[]byte, fieldPtr unsafe.Pointer) error {
 	*buf = append(*buf, ']')
 	return nil
 }
-func appendInt32Slice(buf *[]byte, fieldPtr unsafe.Pointer) error {
+func appendInt32Slice(buf *[]byte, fieldPtr unsafe.Pointer, ctx context.Context) error {
 	items := *(*[]int32)(fieldPtr)
 	*buf = append(*buf, '[')
 	for i := 0; i < len(items); i++ {
+		if i&255 == 0 {
+			if err := contextError(ctx); err != nil {
+				return err
+			}
+		}
 		if i > 0 {
 			*buf = append(*buf, ',')
 		}
@@ -1613,10 +1734,15 @@ func appendInt32Slice(buf *[]byte, fieldPtr unsafe.Pointer) error {
 	*buf = append(*buf, ']')
 	return nil
 }
-func appendInt64Slice(buf *[]byte, fieldPtr unsafe.Pointer) error {
+func appendInt64Slice(buf *[]byte, fieldPtr unsafe.Pointer, ctx context.Context) error {
 	items := *(*[]int64)(fieldPtr)
 	*buf = append(*buf, '[')
 	for i := 0; i < len(items); i++ {
+		if i&255 == 0 {
+			if err := contextError(ctx); err != nil {
+				return err
+			}
+		}
 		if i > 0 {
 			*buf = append(*buf, ',')
 		}
@@ -1625,10 +1751,15 @@ func appendInt64Slice(buf *[]byte, fieldPtr unsafe.Pointer) error {
 	*buf = append(*buf, ']')
 	return nil
 }
-func appendUintSlice(buf *[]byte, fieldPtr unsafe.Pointer) error {
+func appendUintSlice(buf *[]byte, fieldPtr unsafe.Pointer, ctx context.Context) error {
 	items := *(*[]uint)(fieldPtr)
 	*buf = append(*buf, '[')
 	for i := 0; i < len(items); i++ {
+		if i&255 == 0 {
+			if err := contextError(ctx); err != nil {
+				return err
+			}
+		}
 		if i > 0 {
 			*buf = append(*buf, ',')
 		}
@@ -1637,10 +1768,15 @@ func appendUintSlice(buf *[]byte, fieldPtr unsafe.Pointer) error {
 	*buf = append(*buf, ']')
 	return nil
 }
-func appendUint8Slice(buf *[]byte, fieldPtr unsafe.Pointer) error {
+func appendUint8Slice(buf *[]byte, fieldPtr unsafe.Pointer, ctx context.Context) error {
 	items := *(*[]uint8)(fieldPtr)
 	*buf = append(*buf, '[')
 	for i := 0; i < len(items); i++ {
+		if i&255 == 0 {
+			if err := contextError(ctx); err != nil {
+				return err
+			}
+		}
 		if i > 0 {
 			*buf = append(*buf, ',')
 		}
@@ -1649,10 +1785,15 @@ func appendUint8Slice(buf *[]byte, fieldPtr unsafe.Pointer) error {
 	*buf = append(*buf, ']')
 	return nil
 }
-func appendUint16Slice(buf *[]byte, fieldPtr unsafe.Pointer) error {
+func appendUint16Slice(buf *[]byte, fieldPtr unsafe.Pointer, ctx context.Context) error {
 	items := *(*[]uint16)(fieldPtr)
 	*buf = append(*buf, '[')
 	for i := 0; i < len(items); i++ {
+		if i&255 == 0 {
+			if err := contextError(ctx); err != nil {
+				return err
+			}
+		}
 		if i > 0 {
 			*buf = append(*buf, ',')
 		}
@@ -1661,10 +1802,15 @@ func appendUint16Slice(buf *[]byte, fieldPtr unsafe.Pointer) error {
 	*buf = append(*buf, ']')
 	return nil
 }
-func appendUint32Slice(buf *[]byte, fieldPtr unsafe.Pointer) error {
+func appendUint32Slice(buf *[]byte, fieldPtr unsafe.Pointer, ctx context.Context) error {
 	items := *(*[]uint32)(fieldPtr)
 	*buf = append(*buf, '[')
 	for i := 0; i < len(items); i++ {
+		if i&255 == 0 {
+			if err := contextError(ctx); err != nil {
+				return err
+			}
+		}
 		if i > 0 {
 			*buf = append(*buf, ',')
 		}
@@ -1673,10 +1819,15 @@ func appendUint32Slice(buf *[]byte, fieldPtr unsafe.Pointer) error {
 	*buf = append(*buf, ']')
 	return nil
 }
-func appendUint64Slice(buf *[]byte, fieldPtr unsafe.Pointer) error {
+func appendUint64Slice(buf *[]byte, fieldPtr unsafe.Pointer, ctx context.Context) error {
 	items := *(*[]uint64)(fieldPtr)
 	*buf = append(*buf, '[')
 	for i := 0; i < len(items); i++ {
+		if i&255 == 0 {
+			if err := contextError(ctx); err != nil {
+				return err
+			}
+		}
 		if i > 0 {
 			*buf = append(*buf, ',')
 		}
@@ -1685,10 +1836,15 @@ func appendUint64Slice(buf *[]byte, fieldPtr unsafe.Pointer) error {
 	*buf = append(*buf, ']')
 	return nil
 }
-func appendFloat32Slice(buf *[]byte, fieldPtr unsafe.Pointer) error {
+func appendFloat32Slice(buf *[]byte, fieldPtr unsafe.Pointer, ctx context.Context) error {
 	items := *(*[]float32)(fieldPtr)
 	*buf = append(*buf, '[')
 	for i := 0; i < len(items); i++ {
+		if i&255 == 0 {
+			if err := contextError(ctx); err != nil {
+				return err
+			}
+		}
 		if i > 0 {
 			*buf = append(*buf, ',')
 		}
@@ -1697,10 +1853,15 @@ func appendFloat32Slice(buf *[]byte, fieldPtr unsafe.Pointer) error {
 	*buf = append(*buf, ']')
 	return nil
 }
-func appendFloat64Slice(buf *[]byte, fieldPtr unsafe.Pointer) error {
+func appendFloat64Slice(buf *[]byte, fieldPtr unsafe.Pointer, ctx context.Context) error {
 	items := *(*[]float64)(fieldPtr)
 	*buf = append(*buf, '[')
 	for i := 0; i < len(items); i++ {
+		if i&255 == 0 {
+			if err := contextError(ctx); err != nil {
+				return err
+			}
+		}
 		if i > 0 {
 			*buf = append(*buf, ',')
 		}
@@ -1999,6 +2160,9 @@ func inlineRaw(fieldPtr unsafe.Pointer, kind reflect.Kind) []byte {
 
 func (e *Engine) tryInlineRawMessage(sess *encoderSession, plan *structPlan, structPtr unsafe.Pointer) (bool, error) {
 	for i := range plan.fields {
+		if err := sess.checkContext(); err != nil {
+			return false, err
+		}
 		p := &plan.fields[i]
 		if !p.inlineRaw {
 			continue

@@ -91,6 +91,9 @@ func (e *Engine) appendSelectedObject(sess *encoderSession, rv reflect.Value, pl
 	sess.buf = append(sess.buf, '{')
 	counter := 0
 	for _, item := range selected {
+		if err := sess.checkContext(); err != nil {
+			return err
+		}
 		owner := rv
 		for _, index := range item.parents {
 			owner = owner.Field(index)

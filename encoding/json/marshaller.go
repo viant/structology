@@ -28,15 +28,25 @@ func NewMarshaller(typeOf reflect.Type, opts ...Option) (*Marshaller, error) {
 	return &Marshaller{typeOf: typeOf, engine: engine}, nil
 }
 func (m *Marshaller) Marshal(value interface{}) ([]byte, error) {
-	if m.engine.NameTransform == nil && m.engine.Exclude == nil {
-		if typ, ptr, ok := pointerStructMeta(value); ok {
-			return m.engine.MarshalTypedPtr(nil, typ, ptr)
-		}
-		if typ, ptr, ok := structValueMeta(value); ok {
-			return m.engine.MarshalTypedPtr(nil, typ, ptr)
+	return m.MarshalContext(context.Background(), value)
+}
+
+// MarshalContext encodes with operation-local cancellation on the prepared engine.
+func (m *Marshaller) MarshalContext(ctx context.Context, value interface{}) ([]byte, error) {
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
 	}
-	return m.engine.Marshal(value)
+	if m.engine.NameTransform == nil && m.engine.Exclude == nil {
+		if typ, ptr, ok := pointerStructMeta(value); ok {
+			return m.engine.MarshalTypedPtrContext(ctx, nil, typ, ptr)
+		}
+		if typ, ptr, ok := structValueMeta(value); ok {
+			return m.engine.MarshalTypedPtrContext(ctx, nil, typ, ptr)
+		}
+	}
+	return m.engine.MarshalContext(ctx, value)
 }
 func (m *Marshaller) Wire() (*jsonmarshal.WireShape, error) {
 	m.once.Do(func() { m.shape, m.err = m.engine.Wire(m.typeOf) })
@@ -73,4 +83,9 @@ func (cfg Options) marshalEngine() *jsonmarshal.Engine {
 // applying opt-in metadata to the original instance.
 func (m *Marshaller) MarshalWithRepresentation(value any, metadata *shape.Representation) ([]byte, error) {
 	return m.engine.WithRepresentation(metadata).Marshal(value)
+}
+
+// MarshalWithRepresentationContext applies opt-in metadata and operation-local context.
+func (m *Marshaller) MarshalWithRepresentationContext(ctx context.Context, value any, metadata *shape.Representation) ([]byte, error) {
+	return m.engine.WithRepresentation(metadata).MarshalContext(ctx, value)
 }
