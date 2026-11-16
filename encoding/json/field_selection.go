@@ -2,6 +2,8 @@ package json
 
 import (
 	"context"
+	"encoding"
+	stdjson "encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -47,20 +49,46 @@ type FieldFilter struct {
 // original standard filter remains immutable.
 func (f *FieldFilter) WithOptions(opts ...Option) (*FieldFilter, error) {
 	cfg := resolveOptions(context.Background(), opts)
+	root := f.typeOf
 	if cfg.Representation != nil {
 		original, actual := cfg.Representation.Original(), f.typeOf
 		for original.Kind() == reflect.Pointer {
 			original = original.Elem()
 		}
-		for actual.Kind() == reflect.Pointer {
+		for actual != nil && actual.Kind() == reflect.Pointer {
 			actual = actual.Elem()
 		}
 		if original != actual {
-			return nil, fmt.Errorf("representation expects %s, got %s", original, actual)
+			if !sameSelectionLayout(actual, original) {
+				return nil, fmt.Errorf("representation expects %s, got %s", original, actual)
+			}
+			root = cfg.Representation.Original()
 		}
 	}
-	result := &FieldFilter{typeOf: f.typeOf, selections: f.selections, canonical: f.canonical}
+	result := &FieldFilter{typeOf: root, selections: f.selections, canonical: f.canonical}
 	return result, result.compile(&cfg)
+}
+
+// A proxy may copy a row into a distinct defined output type to own its lifecycle.
+// Reuse canonical indexes only for transparent roots with identical declared fields.
+// Go's ConvertibleTo alone ignores struct tags, which can change public visibility.
+func sameSelectionLayout(source, target reflect.Type) bool {
+	if source == nil || target == nil || source.Kind() != reflect.Struct || target.Kind() != reflect.Struct || source.Name() == "" || target.Name() == "" || source.NumField() != target.NumField() {
+		return false
+	}
+	for _, t := range []reflect.Type{source, target} {
+		ptr := reflect.PointerTo(t)
+		if ptr.Implements(reflect.TypeFor[stdjson.Marshaler]()) || ptr.Implements(reflect.TypeFor[encoding.TextMarshaler]()) {
+			return false
+		}
+	}
+	for i := 0; i < source.NumField(); i++ {
+		a, b := source.Field(i), target.Field(i)
+		if a.Name != b.Name || a.PkgPath != b.PkgPath || a.Type != b.Type || a.Tag != b.Tag || a.Anonymous != b.Anonymous || a.Offset != b.Offset {
+			return false
+		}
+	}
+	return true
 }
 
 func NewFieldFilter(t reflect.Type, selections []FieldSelection) (*FieldFilter, error) {
