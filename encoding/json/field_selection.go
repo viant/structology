@@ -43,9 +43,22 @@ type FieldFilter struct {
 }
 
 // WithOptions resolves parent paths using the transformed encoder's tag and
-// naming authority. The original standard filter remains immutable.
+// naming and representation authority over canonical storage indexes. The
+// original standard filter remains immutable.
 func (f *FieldFilter) WithOptions(opts ...Option) (*FieldFilter, error) {
 	cfg := resolveOptions(context.Background(), opts)
+	if cfg.Representation != nil {
+		original, actual := cfg.Representation.Original(), f.typeOf
+		for original.Kind() == reflect.Pointer {
+			original = original.Elem()
+		}
+		for actual.Kind() == reflect.Pointer {
+			actual = actual.Elem()
+		}
+		if original != actual {
+			return nil, fmt.Errorf("representation expects %s, got %s", original, actual)
+		}
+	}
 	result := &FieldFilter{typeOf: f.typeOf, selections: f.selections, canonical: f.canonical}
 	return result, result.compile(&cfg)
 }
@@ -70,9 +83,13 @@ func (result *FieldFilter) compile(cfg *Options) error {
 selectionLoop:
 	for _, selection := range selections {
 		current := t
+		var representation *xshape.Representation
+		if cfg != nil {
+			representation = cfg.Representation
+		}
 		var path []string
 		for _, holder := range selection.Path {
-			field, found, err := result.holderField(current, holder, cfg, path)
+			field, found, err := result.holderField(current, holder, cfg, path, representation)
 			if err != nil {
 				return err
 			}
@@ -95,9 +112,13 @@ selectionLoop:
 				return fmt.Errorf("JSON selection holder %q is not exposed on %v", holder, current)
 			}
 			path = append(path, selectionWireName(field, cfg, path))
+			representation = selectionRepresentation(representation)
+			if representation != nil {
+				representation = representation.FieldShapeByIndex(field.Field.Index)
+			}
 			current = field.Field.ReflectedType
 		}
-		fields, err := result.fields(current, cfg)
+		fields, err := result.fields(current, cfg, representation)
 		if err != nil {
 			return err
 		}
@@ -109,7 +130,11 @@ selectionLoop:
 		seen := map[string]bool{}
 		indexes := fieldIndexNode{}
 		for _, field := range fields {
-			selected := include[field.Field.Name]
+			canonicalName := field.Field.Name
+			if representation != nil {
+				canonicalName = selectionCanonicalName(current, field.Field.Index)
+			}
+			selected := include[canonicalName]
 			for _, index := range selection.Indexes {
 				if reflect.DeepEqual(index, field.Field.Index) {
 					selected = true
@@ -129,11 +154,11 @@ selectionLoop:
 				node = child
 			}
 			node.excluded = !selected
-			if cfg != nil && seen[field.Field.Name] && excluded[field.Field.Name] != !selected {
-				return fmt.Errorf("JSON field selection cannot distinguish promoted fields named %q", field.Field.Name)
+			if cfg != nil && seen[canonicalName] && excluded[canonicalName] != !selected {
+				return fmt.Errorf("JSON field selection cannot distinguish promoted fields named %q", canonicalName)
 			}
-			seen[field.Field.Name] = true
-			excluded[field.Field.Name] = excluded[field.Field.Name] || !selected
+			seen[canonicalName] = true
+			excluded[canonicalName] = excluded[canonicalName] || !selected
 		}
 		scope := &result.root
 		for _, part := range path {
@@ -159,15 +184,19 @@ selectionLoop:
 // holderField validates only the selected ancestor. A holder can remain
 // visible to both encoders even when an unrelated sibling (for example an
 // inline map) has different static visibility in the two encoders.
-func (f *FieldFilter) holderField(t reflect.Type, name string, cfg *Options, path []string) (xshape.JSONField, bool, error) {
-	fields, err := f.fields(t, nil)
+func (f *FieldFilter) holderField(t reflect.Type, name string, cfg *Options, path []string, representation *xshape.Representation) (xshape.JSONField, bool, error) {
+	fields, err := f.fields(t, nil, representation)
 	if err != nil {
 		return xshape.JSONField{}, false, err
 	}
 	var selected xshape.JSONField
 	count := 0
 	for _, field := range fields {
-		if field.Field.Name == name {
+		canonicalName := field.Field.Name
+		if representation != nil {
+			canonicalName = selectionCanonicalName(t, field.Field.Index)
+		}
+		if canonicalName == name {
 			selected = field
 			count++
 		}
@@ -178,7 +207,7 @@ func (f *FieldFilter) holderField(t reflect.Type, name string, cfg *Options, pat
 	if count != 1 {
 		return xshape.JSONField{}, false, fmt.Errorf("JSON selection holder %q is ambiguous on %v", name, t)
 	}
-	if cfg != nil && selectionFieldIgnored(t, selected.Field.Index) {
+	if cfg != nil && selectionFieldIgnored(t, selected.Field.Index, representation) {
 		return xshape.JSONField{}, false, nil
 	}
 	wireName := selectionWireName(selected, cfg, path)
@@ -191,7 +220,7 @@ func (f *FieldFilter) holderField(t reflect.Type, name string, cfg *Options, pat
 		}
 	}
 	if cfg != nil {
-		transformed, err := f.transformedWireFields(t, cfg, path, nil, map[reflect.Type]bool{})
+		transformed, err := f.transformedWireFields(t, cfg, path, nil, map[reflect.Type]bool{}, representation)
 		if err != nil {
 			return xshape.JSONField{}, false, err
 		}
@@ -219,7 +248,7 @@ type transformedWireField struct {
 // transformedWireFields mirrors the static struct-field flattening used by
 // the transformed encoder. Inline maps contribute runtime keys, so they do not
 // participate in this structural holder-identity check.
-func (f *FieldFilter) transformedWireFields(t reflect.Type, cfg *Options, path []string, prefix []int, active map[reflect.Type]bool) ([]transformedWireField, error) {
+func (f *FieldFilter) transformedWireFields(t reflect.Type, cfg *Options, path []string, prefix []int, active map[reflect.Type]bool, representation *xshape.Representation) ([]transformedWireField, error) {
 	for t != nil && (t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice || t.Kind() == reflect.Array) {
 		t = t.Elem()
 	}
@@ -229,27 +258,30 @@ func (f *FieldFilter) transformedWireFields(t reflect.Type, cfg *Options, path [
 	if active[t] {
 		return nil, fmt.Errorf("recursive inline selection on %v", t)
 	}
-	if hasWholeValueInline(t) {
+	representation = selectionRepresentation(representation)
+	if hasWholeValueInline(t, representation) {
 		return nil, fmt.Errorf("whole-value inline ancestor %v has no independent static holder path", t)
 	}
 	active[t] = true
 	defer delete(active, t)
-	fields, err := xshape.Linked(t).Fields()
-	if err != nil {
-		return nil, err
-	}
 	var result []transformedWireField
-	for _, field := range fields {
-		if len(field.Index) != 1 || !field.Exported || field.Tag.Get("setMarker") == "true" {
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		var child *xshape.Representation
+		if representation != nil {
+			field = representation.Field(i)
+			child = representation.FieldShape(i)
+		}
+		if !field.IsExported() || field.Tag.Get("setMarker") == "true" {
 			continue
 		}
-		tag := tagutil.ResolveFieldTag(field.StructField())
+		tag := tagutil.ResolveFieldTag(field)
 		if tag.Ignore {
 			continue
 		}
 		index := append(append([]int(nil), prefix...), field.Index...)
 		if field.Anonymous || tag.Inline {
-			base := field.ReflectedType
+			base := field.Type
 			for base != nil && base.Kind() == reflect.Pointer {
 				base = base.Elem()
 			}
@@ -258,14 +290,14 @@ func (f *FieldFilter) transformedWireFields(t reflect.Type, cfg *Options, path [
 			if base != nil && base.Kind() == reflect.Map {
 				continue
 			}
-			nested, err := f.transformedWireFields(field.ReflectedType, cfg, path, index, active)
+			nested, err := f.transformedWireFields(field.Type, cfg, path, index, active, child)
 			if err != nil {
 				return nil, err
 			}
 			result = append(result, nested...)
 			continue
 		}
-		wire := selectionWireName(xshape.JSONField{Field: field, Name: tag.Name}, cfg, path)
+		wire := selectionWireName(xshape.JSONField{Field: xshape.Field{Name: field.Name, Tag: field.Tag, ReflectedType: field.Type}, Name: tag.Name}, cfg, path)
 		result = append(result, transformedWireField{name: wire, index: index})
 	}
 	return result, nil
@@ -274,7 +306,7 @@ func (f *FieldFilter) transformedWireFields(t reflect.Type, cfg *Options, path [
 // hasWholeValueInline mirrors the encoder's buildStructPlan admission rule:
 // exactly one non-anonymous inline candidate and no explicit non-inline field
 // makes the inline field replace the whole containing value.
-func hasWholeValueInline(t reflect.Type) bool {
+func hasWholeValueInline(t reflect.Type, representation *xshape.Representation) bool {
 	if t == nil || t.Kind() != reflect.Struct {
 		return false
 	}
@@ -282,6 +314,9 @@ func hasWholeValueInline(t reflect.Type) bool {
 	hasExplicitNonInline := false
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
+		if representation != nil {
+			field = representation.Field(i)
+		}
 		if field.PkgPath != "" || field.Tag.Get("setMarker") == "true" {
 			continue
 		}
@@ -296,6 +331,35 @@ func hasWholeValueInline(t reflect.Type) bool {
 		}
 	}
 	return inlineCandidates == 1 && !hasExplicitNonInline
+}
+
+// selectionRepresentation follows container storage without changing its indexes.
+func selectionRepresentation(representation *xshape.Representation) *xshape.Representation {
+	if representation == nil || !representation.Changed() {
+		return nil
+	}
+	for representation != nil {
+		kind := representation.Original().Kind()
+		if kind != reflect.Pointer && kind != reflect.Slice && kind != reflect.Array {
+			break
+		}
+		representation = representation.Elem()
+	}
+	return representation
+}
+
+// The encoder calls exclusions with the original Go name, even when metadata
+// changes its public name. Selection must retain that storage identity as well.
+func selectionCanonicalName(t reflect.Type, index []int) string {
+	var name string
+	for _, part := range index {
+		for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+			t = t.Elem()
+		}
+		field := t.Field(part)
+		name, t = field.Name, field.Type
+	}
+	return name
 }
 
 func selectionWireName(field xshape.JSONField, cfg *Options, path []string) string {
@@ -319,21 +383,28 @@ func selectionWireName(field xshape.JSONField, cfg *Options, path []string) stri
 	return name
 }
 
-func (f *FieldFilter) fields(t reflect.Type, cfg *Options) ([]xshape.JSONField, error) {
+func (f *FieldFilter) fields(t reflect.Type, cfg *Options, representation *xshape.Representation) ([]xshape.JSONField, error) {
 	for t != nil && (t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice || t.Kind() == reflect.Array) {
 		t = t.Elem()
 	}
-	fields, err := xshape.Linked(t).JSONFields()
+	representation = selectionRepresentation(representation)
+	var fields []xshape.JSONField
+	var err error
+	if representation != nil {
+		fields, err = representation.JSONFields()
+	} else {
+		fields, err = xshape.Linked(t).JSONFields()
+	}
 	if err != nil || cfg == nil {
 		return fields, err
 	}
 	native := map[string]bool{}
-	if err = f.transformedIndexes(t, nil, native, map[reflect.Type]bool{}); err != nil {
+	if err = f.transformedIndexes(t, nil, native, map[reflect.Type]bool{}, representation); err != nil {
 		return nil, err
 	}
 	// Transformed tags may hide a standard JSON field (internal/format:ignore).
-	// Keep only the same canonical indexes that remain visible. This cannot
-	// introduce a field or change promotion; the encoder still owns exclusions.
+	// Effective metadata may expose a backing field. Native JSON dominance and
+	// exact storage indexes still bound the fields that remain visible.
 	visible := make([]xshape.JSONField, 0, len(fields))
 	for _, field := range fields {
 		if native[fmt.Sprint(field.Field.Index)] {
@@ -348,12 +419,17 @@ func (f *FieldFilter) fields(t reflect.Type, cfg *Options) ([]xshape.JSONField, 
 
 // Selection cannot restore a field hidden by the native encoder's tags,
 // including fields promoted through an ignored embedded parent.
-func selectionFieldIgnored(t reflect.Type, index []int) bool {
+func selectionFieldIgnored(t reflect.Type, index []int, representation *xshape.Representation) bool {
 	for _, part := range index {
 		for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
 			t = t.Elem()
 		}
+		representation = selectionRepresentation(representation)
 		field := t.Field(part)
+		if representation != nil {
+			field = representation.Field(part)
+			representation = representation.FieldShape(part)
+		}
 		if field.Tag.Get("setMarker") == "true" || tagutil.ResolveFieldTag(field).Ignore {
 			return true
 		}
@@ -401,7 +477,7 @@ func (f *FieldFilter) ExcludeField(path []string, index []int) bool {
 
 // transformedIndexes checks that a path filter has the same field identities in
 // both native engines. Structural inline/dominance differences fail closed.
-func (f *FieldFilter) transformedIndexes(t reflect.Type, prefix []int, result map[string]bool, active map[reflect.Type]bool) error {
+func (f *FieldFilter) transformedIndexes(t reflect.Type, prefix []int, result map[string]bool, active map[reflect.Type]bool, representation *xshape.Representation) error {
 	for t != nil && t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
@@ -413,21 +489,24 @@ func (f *FieldFilter) transformedIndexes(t reflect.Type, prefix []int, result ma
 	}
 	active[t] = true
 	defer delete(active, t)
-	fields, err := xshape.Linked(t).Fields()
-	if err != nil {
-		return err
-	}
-	for _, field := range fields {
-		if len(field.Index) != 1 || !field.Exported || field.Tag.Get("setMarker") == "true" {
+	representation = selectionRepresentation(representation)
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		var child *xshape.Representation
+		if representation != nil {
+			field = representation.Field(i)
+			child = representation.FieldShape(i)
+		}
+		if !field.IsExported() || field.Tag.Get("setMarker") == "true" {
 			continue
 		}
-		tag := tagutil.ResolveFieldTag(field.StructField())
+		tag := tagutil.ResolveFieldTag(field)
 		if tag.Ignore {
 			continue
 		}
 		index := append(append([]int(nil), prefix...), field.Index...)
 		if field.Anonymous || tag.Inline {
-			if err := f.transformedIndexes(field.ReflectedType, index, result, active); err != nil {
+			if err := f.transformedIndexes(field.Type, index, result, active, child); err != nil {
 				return err
 			}
 			continue
