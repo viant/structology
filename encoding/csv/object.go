@@ -169,6 +169,23 @@ func (o *Object) Accessor(accessorIndex int, mainConfig *Config, depth int, conf
 		parentAccessorIndex: accessorIndex,
 		holder:              o.holder,
 	}
+	// A relation can be behind pointers (including a pointer to a named
+	// slice). Prepare navigation here, without changing unmarshal's holders.
+	if o.xField != nil {
+		typ := o.xField.Type
+		for typ.Kind() == reflect.Ptr {
+			accessor.fieldPointers++
+			typ = typ.Elem()
+		}
+		if typ.Kind() == reflect.Slice {
+			if accessor.slice == nil {
+				accessor.slice = xunsafe.NewSlice(typ)
+			}
+			for typ = typ.Elem(); typ.Kind() == reflect.Ptr; typ = typ.Elem() {
+				accessor.elemPointers++
+			}
+		}
+	}
 
 	for _, child := range children {
 		child._parent = accessor

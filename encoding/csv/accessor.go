@@ -20,6 +20,8 @@ type (
 		currSliceIndex int
 		slicePtr       unsafe.Pointer
 		slice          *xunsafe.Slice
+		fieldPointers  int
+		elemPointers   int
 
 		ptr    unsafe.Pointer // refering to a single object
 		field  *xunsafe.Field // used to get value from parent pointer
@@ -61,6 +63,7 @@ func (a *Accessor) prepare() bool {
 		for i := 0; i < accessor.parentAccessorIndex; i++ {
 			child := parent.children[i]
 			if parent.ptr == nil {
+				child.slicePtr = nil
 				child.Set(nil)
 			} else {
 				pointer, slice := parent.getChildValue(parent.ptr, child)
@@ -79,6 +82,7 @@ func (a *Accessor) Set(pointer unsafe.Pointer) {
 
 	for _, child := range a.children {
 		if pointer == nil {
+			child.slicePtr = nil
 			child.Set(nil)
 		} else {
 			aPtr, slicePtr := a.getChildValue(pointer, child)
@@ -91,9 +95,15 @@ func (a *Accessor) Set(pointer unsafe.Pointer) {
 }
 
 func (a *Accessor) getChildValue(pointer unsafe.Pointer, child *Accessor) (valuePtr unsafe.Pointer, slicePtr unsafe.Pointer) {
-	valuePointer := child.field.ValuePointer(pointer)
+	valuePointer := child.field.Pointer(pointer)
+	for i := 0; i < child.fieldPointers && valuePointer != nil; i++ {
+		valuePointer = xunsafe.DerefPointer(valuePointer)
+	}
 	if child.slice == nil {
 		return valuePointer, nil
+	}
+	if valuePointer == nil {
+		return nil, nil
 	}
 
 	lenSlice := child.slice.Len(valuePointer)
@@ -101,8 +111,17 @@ func (a *Accessor) getChildValue(pointer unsafe.Pointer, child *Accessor) (value
 		return nil, valuePointer
 	}
 
-	at := child.slice.ValuePointerAt(valuePointer, 0)
-	return xunsafe.AsPointer(at), valuePointer
+	return child.sliceValuePointer(valuePointer, 0), valuePointer
+}
+
+// The slice accessor already dereferences one pointer for pointer elements.
+// Remaining pointer levels are compiled once from the declared element type.
+func (a *Accessor) sliceValuePointer(slicePtr unsafe.Pointer, index int) unsafe.Pointer {
+	pointer := xunsafe.AsPointer(a.slice.ValuePointerAt(slicePtr, index))
+	for i := 1; i < a.elemPointers && pointer != nil; i++ {
+		pointer = xunsafe.DerefPointer(pointer)
+	}
+	return pointer
 }
 
 func (a *Accessor) Stringify(writer *writer) {
@@ -187,8 +206,7 @@ func (a *Accessor) next() (*Accessor, bool) {
 		sliceLen := a.slice.Len(a.slicePtr)
 		if a.currSliceIndex < sliceLen-1 {
 			a.currSliceIndex++
-			value := a.slice.ValuePointerAt(a.slicePtr, a.currSliceIndex)
-			a.Set(xunsafe.AsPointer(value))
+			a.Set(a.sliceValuePointer(a.slicePtr, a.currSliceIndex))
 			return a, true
 		}
 
