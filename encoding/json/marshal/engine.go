@@ -75,7 +75,7 @@ type fieldPlan struct {
 	timeLayout     string
 	timeFormat     *format.Tag
 	fast           bool
-	appendFn       func(*[]byte, unsafe.Pointer) error
+	appendFn       func(*Engine, *encoderSession, unsafe.Pointer) error
 	emptyFn        func(unsafe.Pointer) bool
 }
 
@@ -797,7 +797,7 @@ func (e *Engine) appendStructStatic(sess *encoderSession, rv reflect.Value, repr
 					return err
 				}
 			}
-			if err := p.appendFn(&sess.buf, fieldPtr); err != nil {
+			if err := p.appendFn(e, sess, fieldPtr); err != nil {
 				return err
 			}
 		} else {
@@ -878,7 +878,7 @@ func (e *Engine) appendStructFieldsStatic(sess *encoderSession, rv reflect.Value
 					return err
 				}
 			}
-			if err := p.appendFn(&sess.buf, fieldPtr); err != nil {
+			if err := p.appendFn(e, sess, fieldPtr); err != nil {
 				return err
 			}
 		} else {
@@ -989,7 +989,7 @@ func (e *Engine) appendStructFieldsDynamic(sess *encoderSession, rv reflect.Valu
 					return err
 				}
 			}
-			if err := p.appendFn(&sess.buf, fieldPtr); err != nil {
+			if err := p.appendFn(e, sess, fieldPtr); err != nil {
 				return err
 			}
 		} else {
@@ -1219,8 +1219,12 @@ func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom
 			timeFormat:     fTag.TimeFormat,
 			ptrElem:        ptrElem,
 			fast:           fast,
-			appendFn:       primitiveAppendFunc(kind, ptrElem),
 			emptyFn:        primitiveEmptyFunc(kind, ptrElem),
+		}
+		if appendPrimitive := primitiveAppendFunc(kind, ptrElem); appendPrimitive != nil {
+			fp.appendFn = func(_ *Engine, sess *encoderSession, ptr unsafe.Pointer) error {
+				return appendPrimitive(&sess.buf, ptr)
+			}
 		}
 
 		enumeration, enumErr := choice.ParseEnum(field.Tag, field.Type)
@@ -1235,19 +1239,32 @@ func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom
 			result.fastOnly = false
 			fast = true
 			fp.fast = true
-			fp.appendFn = func(dst *[]byte, ptr unsafe.Pointer) error {
+			collection := enumeration != nil && enumeration.CollectionItems() != nil
+			fp.appendFn = func(e *Engine, sess *encoderSession, ptr unsafe.Pointer) error {
 				if enumErr != nil {
 					return enumErr
 				}
-				wire, err := enumeration.Encode(reflect.NewAt(field.Type, ptr).Elem().Interface())
+				source := reflect.NewAt(field.Type, ptr).Elem()
+				wire, err := enumeration.Encode(source.Interface())
 				if err != nil {
 					return err
+				}
+				if collection {
+					value := source
+					for value.Kind() == reflect.Pointer && !value.IsNil() {
+						value = value.Elem()
+					}
+					if value.Kind() == reflect.Slice && value.IsNil() {
+						// Shared plans retain enum metadata, never an engine's policy.
+						// Let the native value encoder own nil slices and pointer descent.
+						return e.appendValue(sess, source)
+					}
 				}
 				raw, err := stdjson.Marshal(wire)
 				if err != nil {
 					return err
 				}
-				*dst = append(*dst, raw...)
+				sess.buf = append(sess.buf, raw...)
 				return nil
 			}
 		}
@@ -1347,7 +1364,7 @@ func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
 					return err
 				}
 			}
-			return appendFn(&sess.buf, fieldPtr)
+			return appendFn(e, sess, fieldPtr)
 		}
 	}
 
