@@ -5,6 +5,7 @@ import "strings"
 type JSONTag struct {
 	Name      string
 	OmitEmpty bool
+	OmitZero  bool
 	Explicit  bool
 	Transient bool
 }
@@ -25,9 +26,11 @@ func ParseJSONTag(defaultName string, raw string) JSONTag {
 		Transient: name == "-",
 	}
 	for _, p := range parts[1:] {
-		if p == "omitempty" {
+		switch p {
+		case "omitempty":
 			tag.OmitEmpty = true
-			break
+		case "omitzero":
+			tag.OmitZero = true
 		}
 	}
 	return tag

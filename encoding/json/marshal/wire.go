@@ -252,12 +252,13 @@ func (c *wireCompiler) fields(target *WireShape, plan *structPlan, path []string
 			copy.nullable = true
 			item = &copy
 		}
-		if target.additional != nil && (optional || field.omitempty || c.engine.omitEmpty) {
+		optional = optional || field.omitempty || field.omitZero != nil || c.engine.omitEmpty
+		if target.additional != nil && optional {
 			item = target.additional
 		}
 		source := field.metadata
 		source.Index = append(append([]int(nil), indexes...), source.Index...)
-		target.properties = append(target.properties, WireProperty{field: source, name: name, required: !optional && !field.omitempty && !c.engine.omitEmpty, shape: item})
+		target.properties = append(target.properties, WireProperty{field: source, name: name, required: !optional, shape: item})
 	}
 	return nil
 }

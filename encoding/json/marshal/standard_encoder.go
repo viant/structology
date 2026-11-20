@@ -155,7 +155,7 @@ func (s *standardEncoding) append(dst []byte, v reflect.Value, path []string, de
 			if err != nil {
 				continue
 			} // nil promoted pointer holder
-			if field.OmitEmpty && s.empty(fv) || field.OmitZero && s.zero(fv) {
+			if field.OmitEmpty && isJSONEmpty(fv) || field.OmitZero && isZeroValue(fv) {
 				continue
 			}
 			if count > 0 {
@@ -245,7 +245,7 @@ func (*standardEncoding) scalar(dst []byte, v reflect.Value) ([]byte, error) {
 	}
 	return append(dst, encoded...), nil
 }
-func (*standardEncoding) empty(v reflect.Value) bool {
+func isJSONEmpty(v reflect.Value) bool {
 	switch v.Kind() {
 	case reflect.Array, reflect.Map, reflect.Slice, reflect.String:
 		return v.Len() == 0
@@ -254,7 +254,7 @@ func (*standardEncoding) empty(v reflect.Value) bool {
 	}
 	return false
 }
-func (*standardEncoding) zero(v reflect.Value) bool {
+func isZeroValue(v reflect.Value) bool {
 	contract := reflect.TypeFor[interface{ IsZero() bool }]()
 	if v.Type().Implements(contract) {
 		if (v.Kind() == reflect.Interface || v.Kind() == reflect.Pointer) && v.IsNil() {

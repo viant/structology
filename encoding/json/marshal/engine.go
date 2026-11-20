@@ -61,6 +61,7 @@ type fieldPlan struct {
 	name           string
 	keyLit         []byte
 	omitempty      bool
+	omitZero       func(reflect.Value) bool
 	nullable       bool
 	anonymous      bool
 	inline         bool
@@ -773,15 +774,8 @@ func (e *Engine) appendStructStatic(sess *encoderSession, rv reflect.Value, repr
 			continue
 		}
 		fieldPtr := p.xField.Pointer(structPtr)
-		if p.fast {
-			if (p.omitempty || e.omitEmpty) && p.emptyFn(fieldPtr) {
-				continue
-			}
-		} else {
-			fv := rv.Field(p.index)
-			if (p.omitempty || e.omitEmpty) && isEmptyValue(fv) {
-				continue
-			}
+		if p.shouldOmit(fieldPtr, e.omitEmpty) {
+			continue
 		}
 		if fieldCounter > 0 {
 			sess.buf = append(sess.buf, ',')
@@ -854,15 +848,8 @@ func (e *Engine) appendStructFieldsStatic(sess *encoderSession, rv reflect.Value
 			continue
 		}
 		fieldPtr := p.xField.Pointer(structPtr)
-		if p.fast {
-			if (p.omitempty || e.omitEmpty) && p.emptyFn(fieldPtr) {
-				continue
-			}
-		} else {
-			fv := rv.Field(p.index)
-			if (p.omitempty || e.omitEmpty) && isEmptyValue(fv) {
-				continue
-			}
+		if p.shouldOmit(fieldPtr, e.omitEmpty) {
+			continue
 		}
 		if *counter > 0 {
 			sess.buf = append(sess.buf, ',')
@@ -964,15 +951,8 @@ func (e *Engine) appendStructFieldsDynamic(sess *encoderSession, rv reflect.Valu
 			name = e.NameTransform(path, p.name)
 		}
 		fieldPtr := p.xField.Pointer(structPtr)
-		if p.fast {
-			if (p.omitempty || e.omitEmpty) && p.emptyFn(fieldPtr) {
-				continue
-			}
-		} else {
-			fv := reflect.NewAt(p.rType, fieldPtr).Elem()
-			if (p.omitempty || e.omitEmpty) && isEmptyValue(fv) {
-				continue
-			}
+		if p.shouldOmit(fieldPtr, e.omitEmpty) {
+			continue
 		}
 		if *counter > 0 {
 			sess.buf = append(sess.buf, ',')
@@ -1227,6 +1207,16 @@ func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom
 			}
 		}
 
+		if resolved.OmitZero {
+			fp.omitZero = isZeroValue
+			if resolved.OmitEmpty && !fTag.OmitEmpty {
+				// Combined JSON options use encoding/json's empty definition.
+				// Native format and global omission retain their own policy.
+				fp.omitempty = false
+				fp.omitZero = func(v reflect.Value) bool { return isJSONEmpty(v) || isZeroValue(v) }
+			}
+		}
+
 		enumeration, enumErr := choice.ParseEnum(field.Tag, field.Type)
 		if enumeration != nil || enumErr != nil {
 			// Enum storage can be nonprimitive; retain the native omission
@@ -1275,7 +1265,7 @@ func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom
 			} else if explicit {
 				hasExplicitNonInline = true
 			}
-			if !fast || inline || field.Anonymous || fp.nullable {
+			if !fast || inline || field.Anonymous || fp.nullable || fp.omitZero != nil {
 				result.fastOnly = false
 			} else {
 				result.fastOps = append(result.fastOps, fastFieldOp{
@@ -1307,7 +1297,33 @@ func buildStructPlan(rt reflect.Type, compileName func(string) string, hasCustom
 	return result
 }
 
+func (p *fieldPlan) shouldOmit(fieldPtr unsafe.Pointer, globalOmitEmpty bool) bool {
+	if p.omitempty || globalOmitEmpty {
+		if p.fast {
+			if p.emptyFn(fieldPtr) {
+				return true
+			}
+		} else if isEmptyValue(reflect.NewAt(p.rType, fieldPtr).Elem()) {
+			return true
+		}
+	}
+	return p.omitZero != nil && p.omitZero(reflect.NewAt(p.rType, fieldPtr).Elem())
+}
+
 func compileStaticFieldOp(fp fieldPlan) staticFieldOp {
+	emit := compileStaticFieldEncoder(fp)
+	if fp.omitZero == nil || fp.inline || fp.anonymous {
+		return emit
+	}
+	return func(e *Engine, sess *encoderSession, structPtr unsafe.Pointer, counter *int) error {
+		if fp.shouldOmit(fp.xField.Pointer(structPtr), e.omitEmpty) {
+			return nil
+		}
+		return emit(e, sess, structPtr, counter)
+	}
+}
+
+func compileStaticFieldEncoder(fp fieldPlan) staticFieldOp {
 	xField := fp.xField
 	keyLit := fp.keyLit
 	omit := fp.omitempty

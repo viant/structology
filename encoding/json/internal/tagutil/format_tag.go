@@ -28,6 +28,7 @@ type ResolvedFieldTag struct {
 	// Explicit also includes format names, preserving inline and custom-transform behavior.
 	CaseExplicit bool
 	OmitEmpty    bool
+	OmitZero     bool
 	Ignore       bool
 	Inline       bool
 	Format       FormatFieldTag
@@ -111,6 +112,7 @@ func ResolveFieldTag(sf reflect.StructField) ResolvedFieldTag {
 		Explicit:     explicit,
 		CaseExplicit: caseExplicit,
 		OmitEmpty:    jTag.OmitEmpty || fTag.OmitEmpty,
+		OmitZero:     jTag.OmitZero,
 		Ignore:       jTag.Transient || sf.Tag.Get("internal") == "true" || fTag.Ignore,
 		Inline:       sf.Anonymous || sf.Tag.Get("jsonx") == "inline" || fTag.Inline,
 		Format:       fTag,
